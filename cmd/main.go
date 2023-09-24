@@ -8,8 +8,8 @@ import (
 
 func main() {
 	handlers.RegisterHandlers()
-	
-	err := http.ListenAndServe(":8080", nil);
+
+	err := http.ListenAndServe(":8080", nil)
 	if err != nil {
 		log.Fatal("HTTP server failed to start")
 	}
