@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"log/slog"
 	"net/http"
@@ -10,23 +11,39 @@ import (
 )
 
 type addUserParams struct {
-	Provider    string `json:"provider"`
-	ProviderID  string `json:"provider_id"`
-	Name        string `json:"name"`
-	ImageSource string `json:"image_src"`
-	Colour      string `json:"colour"`
+	Provider    string      `json:"provider"`
+	ProviderID  string      `json:"provider_id"`
+	Name        string      `json:"name"`
+	ImageSource string      `json:"image_src"`
+	Colour      string      `json:"colour"`
+	MusicNotes  []MusicNote `json:"music_notes"`
 }
 
 type User struct {
-	Provider    string    `json:"provider"`
-	ProviderID  string    `json:"provider_id"`
-	Name        string    `json:"name"`
-	ImageSource string    `json:"image_src"`
-	Colour      string    `json:"colour"`
-	CreatedOn   time.Time `json:"created_on"`
+	Provider    string      `json:"provider"`
+	ProviderID  string      `json:"provider_id"`
+	Name        string      `json:"name"`
+	ImageSource string      `json:"image_src"`
+	Colour      string      `json:"colour"`
+	MusicNotes  []MusicNote `json:"music_notes"`
+	CreatedOn   time.Time   `json:"created_on"`
+}
+
+type MusicNote struct {
+	Prompt      string `json:"prompt"`
+	ImageSource string `json:"image_src"`
+	Title       string `json:"title"`
+	Subtitle    string `json:"subtitle"`
 }
 
 func getUser(w http.ResponseWriter, r *http.Request) {
+	provider := r.URL.Query().Get("provider")
+	providerID := r.URL.Query().Get("provider_id")
+	if provider == "" || providerID == "" {
+		http.Error(w, "Missing query params: provider and provider_id", http.StatusBadRequest)
+		return
+	}
+
 	db, err := connectToDB()
 	if err != nil {
 		slog.Error("could not connect to Postgres", "error", err)
@@ -35,14 +52,7 @@ func getUser(w http.ResponseWriter, r *http.Request) {
 	}
 	defer db.Close()
 
-	selectStatement := "SELECT * FROM users WHERE provider = $1 AND provider_id = $2"
-
-	provider := r.URL.Query().Get("provider")
-	providerID := r.URL.Query().Get("provider_id")
-	if provider == "" || providerID == "" {
-		http.Error(w, "Missing query params: provider and provider_id", http.StatusBadRequest)
-		return
-	}
+	selectStatement := "SELECT provider, provider_id, name, colour, image_src, created_on FROM users WHERE provider = $1 AND provider_id = $2"
 	rows, err := db.Query(selectStatement, provider, providerID)
 	if err != nil {
 		slog.Error("could not get user", "error", err)
@@ -71,6 +81,26 @@ func getUser(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "found too many matching users", http.StatusInternalServerError)
 		return
 	}
+
+	query := "SELECT prompt, image_src, title, subtitle FROM music_notes WHERE user_provider = $1 AND user_provider_id = $2;"
+	rows, err = db.Query(query, provider, providerID)
+	if err != nil {
+		slog.Error("could not get user", "error", err)
+		http.Error(w, "Failed to get user", http.StatusInternalServerError)
+		return
+	}
+
+	var musicNotes []MusicNote
+	for rows.Next() {
+		var musicNote MusicNote
+		if err := rows.Scan(&musicNote.Prompt, &musicNote.ImageSource, &musicNote.Title, &musicNote.Subtitle); err != nil {
+			http.Error(w, "Failed to scan row", http.StatusInternalServerError)
+			return
+		}
+		musicNotes = append(musicNotes, musicNote)
+	}
+
+	users[0].MusicNotes = musicNotes
 
 	w.WriteHeader(http.StatusOK)
 	w.Header().Set("Content-Type", "application/json")
@@ -114,10 +144,19 @@ func addUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	ctx := context.Background()
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		slog.Error("could not begin transaction", "error", err)
+		http.Error(w, "Failed to connect to Postgres", http.StatusInternalServerError)
+		return
+	}
+
 	query := "INSERT INTO users (provider, provider_id, name, colour, image_src, created_on) VALUES ($1, $2, $3, $4, $5, $6);"
 
-	stmt, err := db.Prepare(query)
+	stmt, err := tx.Prepare(query)
 	if err != nil {
+		tx.Rollback()
 		slog.Error("failed to prepare SQL statement", "error", err)
 		http.Error(w, "Failed to prepare SQL statement", http.StatusInternalServerError)
 		return
@@ -127,7 +166,36 @@ func addUser(w http.ResponseWriter, r *http.Request) {
 	createdOn := time.Now()
 	_, err = stmt.Exec(addUserBody.Provider, addUserBody.ProviderID, addUserBody.Name, addUserBody.Colour, addUserBody.ImageSource, createdOn)
 	if err != nil {
+		tx.Rollback()
 		slog.Error("failed to execute SQL statement", "error", err)
+		http.Error(w, "Failed to add user", http.StatusInternalServerError)
+		return
+	}
+
+	insertMusicNoteQuery := "INSERT INTO music_notes (user_provider, user_provider_id, prompt, image_src, title, subtitle) VALUES ($1, $2, $3, $4, $5, $6);"
+	for _, musicNote := range addUserBody.MusicNotes {
+		stmt, err := tx.Prepare(insertMusicNoteQuery)
+		if err != nil {
+			tx.Rollback()
+			slog.Error("failed to prepare SQL statement", "error", err)
+			http.Error(w, "Failed to prepare SQL statement", http.StatusInternalServerError)
+			return
+		}
+		defer stmt.Close()
+
+		_, err = stmt.Exec(addUserBody.Provider, addUserBody.ProviderID, musicNote.Prompt, musicNote.ImageSource, musicNote.Title, musicNote.Subtitle)
+		if err != nil {
+			tx.Rollback()
+			slog.Error("failed to execute SQL statement", "error", err)
+			http.Error(w, "Failed to add user", http.StatusInternalServerError)
+			return
+		}
+	}
+
+	err = tx.Commit()
+	if err != nil {
+		tx.Rollback()
+		slog.Error("failed to commit transaction", "error", err)
 		http.Error(w, "Failed to add user", http.StatusInternalServerError)
 		return
 	}
@@ -138,6 +206,7 @@ func addUser(w http.ResponseWriter, r *http.Request) {
 		Name:        addUserBody.Name,
 		ImageSource: addUserBody.ImageSource,
 		Colour:      addUserBody.Colour,
+		MusicNotes:  addUserBody.MusicNotes,
 		CreatedOn:   createdOn,
 	}
 
@@ -183,11 +252,59 @@ func updateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	ctx := context.Background()
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		slog.Error("could not begin transaction", "error", err)
+		http.Error(w, "Failed to connect to Postgres", http.StatusInternalServerError)
+		return
+	}
+
 	query := "UPDATE users SET name = $3, colour = $4, image_src = $5 WHERE provider = $1 AND provider_id = $2;"
 
-	_, err = db.Exec(query, updateUserBody.Provider, updateUserBody.ProviderID, updateUserBody.Name, updateUserBody.Colour, updateUserBody.ImageSource)
+	_, err = tx.Exec(query, updateUserBody.Provider, updateUserBody.ProviderID, updateUserBody.Name, updateUserBody.Colour, updateUserBody.ImageSource)
 	if err != nil {
+		tx.Rollback()
 		slog.Error("failed to execute SQL statement", "error", err)
+		http.Error(w, "Failed to add user", http.StatusInternalServerError)
+		return
+	}
+
+	// Delete existing music notes in order to overwrite them with the new ones
+	query = "DELETE FROM music_notes WHERE user_provider = $1 AND user_provider_id = $2"
+
+	_, err = tx.Exec(query, updateUserBody.Provider, updateUserBody.ProviderID)
+	if err != nil {
+		tx.Rollback()
+		slog.Error("could not delete user", "error", err)
+		http.Error(w, "Failed to delete user", http.StatusInternalServerError)
+		return
+	}
+
+	insertMusicNoteQuery := "INSERT INTO music_notes (user_provider, user_provider_id, prompt, image_src, title, subtitle) VALUES ($1, $2, $3, $4, $5, $6);"
+	for _, musicNote := range updateUserBody.MusicNotes {
+		stmt, err := tx.Prepare(insertMusicNoteQuery)
+		if err != nil {
+			tx.Rollback()
+			slog.Error("failed to prepare SQL statement", "error", err)
+			http.Error(w, "Failed to prepare SQL statement", http.StatusInternalServerError)
+			return
+		}
+		defer stmt.Close()
+
+		_, err = stmt.Exec(updateUserBody.Provider, updateUserBody.ProviderID, musicNote.Prompt, musicNote.ImageSource, musicNote.Title, musicNote.Subtitle)
+		if err != nil {
+			tx.Rollback()
+			slog.Error("failed to execute SQL statement", "error", err)
+			http.Error(w, "Failed to add user", http.StatusInternalServerError)
+			return
+		}
+	}
+
+	err = tx.Commit()
+	if err != nil {
+		tx.Rollback()
+		slog.Error("failed to commit transaction", "error", err)
 		http.Error(w, "Failed to add user", http.StatusInternalServerError)
 		return
 	}
@@ -198,6 +315,7 @@ func updateUser(w http.ResponseWriter, r *http.Request) {
 		Name:        updateUserBody.Name,
 		ImageSource: updateUserBody.ImageSource,
 		Colour:      updateUserBody.Colour,
+		MusicNotes:  updateUserBody.MusicNotes,
 	}
 
 	w.WriteHeader(http.StatusOK)
@@ -214,24 +332,46 @@ func deleteUser(w http.ResponseWriter, r *http.Request) {
 	}
 	defer db.Close()
 
-	deleteSQL := "DELETE FROM users WHERE provider = $1 AND provider_id = $2"
-
 	provider := r.URL.Query().Get("provider")
 	providerID := r.URL.Query().Get("provider_id")
 	if provider == "" || providerID == "" {
 		http.Error(w, "Missing query params: provider and provider_id", http.StatusBadRequest)
 		return
 	}
-	result, err := db.Exec(deleteSQL, provider, providerID)
+
+	ctx := context.Background()
+	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
+		slog.Error("could not begin transaction", "error", err)
+		http.Error(w, "Failed to connect to Postgres", http.StatusInternalServerError)
+		return
+	}
+
+	query := "DELETE FROM music_notes WHERE user_provider = $1 AND user_provider_id = $2"
+
+	_, err = tx.Exec(query, provider, providerID)
+	if err != nil {
+		tx.Rollback()
 		slog.Error("could not delete user", "error", err)
 		http.Error(w, "Failed to delete user", http.StatusInternalServerError)
 		return
 	}
-	rowsDeleted, err := result.RowsAffected()
-	if err != nil || rowsDeleted == 0 {
-		slog.Error("no user with specified ID", "error", err, "provider", provider, "provider_id", providerID)
+
+	query = "DELETE FROM users WHERE provider = $1 AND provider_id = $2"
+
+	_, err = tx.Exec(query, provider, providerID)
+	if err != nil {
+		tx.Rollback()
+		slog.Error("could not delete user", "error", err)
 		http.Error(w, "Failed to delete user", http.StatusInternalServerError)
+		return
+	}
+
+	err = tx.Commit()
+	if err != nil {
+		tx.Rollback()
+		slog.Error("failed to commit transaction", "error", err)
+		http.Error(w, "Failed to add user", http.StatusInternalServerError)
 		return
 	}
 
