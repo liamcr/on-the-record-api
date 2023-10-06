@@ -37,6 +37,10 @@ type MusicNote struct {
 }
 
 func getUser(w http.ResponseWriter, r *http.Request) {
+	setupCORS(w, r)
+	if r.Method == "OPTIONS" {
+		return
+	}
 	provider := r.URL.Query().Get("provider")
 	providerID := r.URL.Query().Get("provider_id")
 	if provider == "" || providerID == "" {
@@ -108,6 +112,10 @@ func getUser(w http.ResponseWriter, r *http.Request) {
 }
 
 func addUser(w http.ResponseWriter, r *http.Request) {
+	setupCORS(w, r)
+	if r.Method == "OPTIONS" {
+		return
+	}
 	var addUserBody addUserParams
 	decoder := json.NewDecoder(r.Body)
 	if err := decoder.Decode(&addUserBody); err != nil {
@@ -216,6 +224,10 @@ func addUser(w http.ResponseWriter, r *http.Request) {
 }
 
 func updateUser(w http.ResponseWriter, r *http.Request) {
+	setupCORS(w, r)
+	if r.Method == "OPTIONS" {
+		return
+	}
 	var updateUserBody addUserParams
 	decoder := json.NewDecoder(r.Body)
 	if err := decoder.Decode(&updateUserBody); err != nil {
@@ -324,6 +336,10 @@ func updateUser(w http.ResponseWriter, r *http.Request) {
 }
 
 func deleteUser(w http.ResponseWriter, r *http.Request) {
+	setupCORS(w, r)
+	if r.Method == "OPTIONS" {
+		return
+	}
 	db, err := connectToDB()
 	if err != nil {
 		slog.Error("could not connect to Postgres", "error", err)

@@ -8,9 +8,9 @@ import (
 
 func RegisterHandlers() {
 	r := mux.NewRouter()
-	r.HandleFunc("/user", getUser).Methods("GET")
-	r.HandleFunc("/user", addUser).Methods("POST")
-	r.HandleFunc("/user", updateUser).Methods("PUT")
-	r.HandleFunc("/user", deleteUser).Methods("DELETE")
+	r.HandleFunc("/user", getUser).Methods("GET", "OPTIONS")
+	r.HandleFunc("/user", addUser).Methods("POST", "OPTIONS")
+	r.HandleFunc("/user", updateUser).Methods("PUT", "OPTIONS")
+	r.HandleFunc("/user", deleteUser).Methods("DELETE", "OPTIONS")
 	http.Handle("/", r)
 }
