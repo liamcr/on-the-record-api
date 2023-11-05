@@ -12,26 +12,26 @@ import (
 
 type addUserParams struct {
 	Provider    string      `json:"provider"`
-	ProviderID  string      `json:"provider_id"`
+	ProviderID  string      `json:"providerId"`
 	Name        string      `json:"name"`
-	ImageSource string      `json:"image_src"`
+	ImageSource string      `json:"imageSrc"`
 	Colour      string      `json:"colour"`
-	MusicNotes  []MusicNote `json:"music_notes"`
+	MusicNotes  []MusicNote `json:"musicNotes"`
 }
 
 type User struct {
 	Provider    string      `json:"provider"`
-	ProviderID  string      `json:"provider_id"`
+	ProviderID  string      `json:"providerId"`
 	Name        string      `json:"name"`
-	ImageSource string      `json:"image_src"`
+	ImageSource string      `json:"imageSrc"`
 	Colour      string      `json:"colour"`
-	MusicNotes  []MusicNote `json:"music_notes"`
-	CreatedOn   time.Time   `json:"created_on"`
+	MusicNotes  []MusicNote `json:"musicNotes"`
+	CreatedOn   time.Time   `json:"createdOn"`
 }
 
 type MusicNote struct {
 	Prompt      string `json:"prompt"`
-	ImageSource string `json:"image_src"`
+	ImageSource string `json:"imageSrc"`
 	Title       string `json:"title"`
 	Subtitle    string `json:"subtitle"`
 }
