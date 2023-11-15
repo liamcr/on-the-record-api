@@ -29,6 +29,13 @@ type User struct {
 	CreatedOn   time.Time   `json:"createdOn"`
 }
 
+type UserCondensed struct {
+	Provider    string `json:"provider"`
+	ProviderID  string `json:"providerId"`
+	Name        string `json:"name"`
+	ImageSource string `json:"imageSrc"`
+}
+
 type MusicNote struct {
 	Prompt      string `json:"prompt"`
 	ImageSource string `json:"imageSrc"`
@@ -393,4 +400,52 @@ func deleteUser(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusNoContent)
 	w.Header().Set("Content-Type", "application/json")
+}
+
+func searchUser(w http.ResponseWriter, r *http.Request) {
+	setupCORS(w, r)
+	if r.Method == "OPTIONS" {
+		return
+	}
+
+	query := r.URL.Query().Get("query")
+	if query == "" {
+		http.Error(w, "Missing query param: query", http.StatusBadRequest)
+		return
+	}
+
+	db, err := connectToDB()
+	if err != nil {
+		slog.Error("could not connect to Postgres", "error", err)
+		http.Error(w, "Failed to connect to Postgres", http.StatusInternalServerError)
+		return
+	}
+	defer db.Close()
+
+	selectStatement := "SELECT provider, provider_id, name, image_src FROM users WHERE name ILIKE FORMAT('%s%%', $1::text)"
+	rows, err := db.Query(selectStatement, query)
+	if err != nil {
+		slog.Error("could not get user", "error", err)
+		http.Error(w, "Failed to get user", http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	var users = []UserCondensed{}
+	for rows.Next() {
+		var user UserCondensed
+		if err := rows.Scan(&user.Provider, &user.ProviderID, &user.Name, &user.ImageSource); err != nil {
+			http.Error(w, "Failed to scan row", http.StatusInternalServerError)
+			return
+		}
+		users = append(users, user)
+
+		if len(users) == 5 {
+			break
+		}
+	}
+
+	w.WriteHeader(http.StatusOK)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(users)
 }
