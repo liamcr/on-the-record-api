@@ -15,6 +15,8 @@ func RegisterHandlers() {
 	r.HandleFunc("/user", deleteUser).Methods("DELETE", "OPTIONS")
 
 	r.HandleFunc("/review", addReview).Methods("POST", "OPTIONS")
-	r.HandleFunc("/review", deletReview).Methods("DELETE", "OPTIONS")
+	r.HandleFunc("/review", deleteReview).Methods("DELETE", "OPTIONS")
+
+	r.HandleFunc("/timeline", getTimeline).Methods("GET", "OPTIONS")
 	http.Handle("/", r)
 }

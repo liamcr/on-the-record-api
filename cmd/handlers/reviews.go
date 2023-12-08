@@ -4,17 +4,18 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"on-the-record-api/cmd/util"
 	"time"
 
 	_ "github.com/lib/pq"
 )
 
 type addReviewParams struct {
-	Provider    string `json:"userProvider"`
-	ProviderID  string `json:"userProviderId"`
+	Provider    string `json:"provider"`
+	ProviderID  string `json:"providerId"`
+	Type        int    `json:"type"`
 	Title       string `json:"title"`
 	Subtitle    string `json:"subtitle"`
-	Colour      string `json:"colour"`
 	ImageSource string `json:"imageSrc"`
 	Score       int    `json:"score"`
 	Body        string `json:"body"`
@@ -23,6 +24,7 @@ type addReviewParams struct {
 type Review struct {
 	Provider    string    `json:"provider"`
 	ProviderID  string    `json:"providerId"`
+	Type        int       `json:"type"`
 	Title       string    `json:"title"`
 	Subtitle    string    `json:"subtitle"`
 	Colour      string    `json:"colour"`
@@ -49,6 +51,12 @@ func addReview(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
+	dominantColour, err := util.GetDominantColourFromImage(addReviewBody.ImageSource)
+	if err != nil {
+		slog.Error("could not get colour from image", "error", err)
+		http.Error(w, "Failed to get colour from image", http.StatusInternalServerError)
+		return
+	}
 	db, err := connectToDB()
 	if err != nil {
 		slog.Error("could not connect to Postgres", "error", err)
@@ -57,7 +65,7 @@ func addReview(w http.ResponseWriter, r *http.Request) {
 	}
 	defer db.Close()
 
-	query := "INSERT INTO reviews (user_provider, user_provider_id, title, subtitle, colour, image_src, score, body, created_on) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9);"
+	query := "INSERT INTO reviews (user_provider, user_provider_id, type, title, subtitle, colour, image_src, score, body, created_on) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10);"
 
 	stmt, err := db.Prepare(query)
 	if err != nil {
@@ -71,9 +79,10 @@ func addReview(w http.ResponseWriter, r *http.Request) {
 	_, err = stmt.Exec(
 		addReviewBody.Provider,
 		addReviewBody.ProviderID,
+		addReviewBody.Type,
 		addReviewBody.Title,
 		addReviewBody.Subtitle,
-		addReviewBody.Colour,
+		dominantColour,
 		addReviewBody.ImageSource,
 		addReviewBody.Score,
 		addReviewBody.Body,
@@ -90,7 +99,7 @@ func addReview(w http.ResponseWriter, r *http.Request) {
 		ProviderID:  addReviewBody.ProviderID,
 		Title:       addReviewBody.Title,
 		Subtitle:    addReviewBody.Subtitle,
-		Colour:      addReviewBody.Colour,
+		Colour:      dominantColour,
 		ImageSource: addReviewBody.ImageSource,
 		Score:       addReviewBody.Score,
 		Body:        addReviewBody.Body,
@@ -102,7 +111,7 @@ func addReview(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(resp)
 }
 
-func deletReview(w http.ResponseWriter, r *http.Request) {
+func deleteReview(w http.ResponseWriter, r *http.Request) {
 	setupCORS(w, r)
 	if r.Method == "OPTIONS" {
 		return
