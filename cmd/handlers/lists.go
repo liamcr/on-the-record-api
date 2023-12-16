@@ -12,8 +12,8 @@ import (
 )
 
 type ListElement struct {
-	Title    string `json:"title"`
-	ImageSrc string `json:"imageSrc"`
+	Name     string `json:"name"`
+	ImageSrc string `json:"src"`
 }
 
 type addListParams struct {
@@ -115,15 +115,15 @@ func addList(w http.ResponseWriter, r *http.Request) {
 
 	_, err = stmt.Exec(
 		id,
-		addListBody.ListElements[0].Title,
+		addListBody.ListElements[0].Name,
 		addListBody.ListElements[0].ImageSrc,
-		addListBody.ListElements[1].Title,
+		addListBody.ListElements[1].Name,
 		addListBody.ListElements[1].ImageSrc,
-		addListBody.ListElements[2].Title,
+		addListBody.ListElements[2].Name,
 		addListBody.ListElements[2].ImageSrc,
-		addListBody.ListElements[3].Title,
+		addListBody.ListElements[3].Name,
 		addListBody.ListElements[3].ImageSrc,
-		addListBody.ListElements[4].Title,
+		addListBody.ListElements[4].Name,
 		addListBody.ListElements[4].ImageSrc,
 	)
 	if err != nil {
