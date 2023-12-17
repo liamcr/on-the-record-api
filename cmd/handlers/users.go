@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"sort"
 	"time"
 
 	_ "github.com/lib/pq"
@@ -19,12 +20,19 @@ type addUserParams struct {
 	MusicNotes  []MusicNote `json:"musicNotes"`
 }
 
+type followUserParams struct {
+	Provider   string `json:"provider"`
+	ProviderID string `json:"providerId"`
+}
+
 type User struct {
 	Provider    string      `json:"provider"`
 	ProviderID  string      `json:"providerId"`
 	Name        string      `json:"name"`
 	ImageSource string      `json:"imageSrc"`
 	Colour      string      `json:"colour"`
+	Followers   int         `json:"followers"`
+	Following   int         `json:"following"`
 	MusicNotes  []MusicNote `json:"musicNotes"`
 	CreatedOn   time.Time   `json:"createdOn"`
 }
@@ -91,6 +99,36 @@ func getUser(w http.ResponseWriter, r *http.Request) {
 		slog.Error("expected 1 user, found more", "matching_users", len(users), "provider", provider, "provider_id", providerID)
 		http.Error(w, "found too many matching users", http.StatusInternalServerError)
 		return
+	}
+
+	numFollowersStatement := "SELECT count(*) FROM follower_relation WHERE followee_provider = $1 AND followee_provider_id = $2"
+	rows, err = db.Query(numFollowersStatement, provider, providerID)
+	if err != nil {
+		slog.Error("could not get user", "error", err)
+		http.Error(w, "Failed to get user", http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+	for rows.Next() {
+		if err := rows.Scan(&users[0].Followers); err != nil {
+			http.Error(w, "Failed to scan row", http.StatusInternalServerError)
+			return
+		}
+	}
+
+	numFollowingStatement := "SELECT count(*) FROM follower_relation WHERE follower_provider = $1 AND follower_provider_id = $2"
+	rows, err = db.Query(numFollowingStatement, provider, providerID)
+	if err != nil {
+		slog.Error("could not get user", "error", err)
+		http.Error(w, "Failed to get user", http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+	for rows.Next() {
+		if err := rows.Scan(&users[0].Following); err != nil {
+			http.Error(w, "Failed to scan row", http.StatusInternalServerError)
+			return
+		}
 	}
 
 	query := "SELECT prompt, image_src, title, subtitle FROM music_notes WHERE user_provider = $1 AND user_provider_id = $2;"
@@ -448,4 +486,163 @@ func searchUser(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(users)
+}
+
+func getPosts(w http.ResponseWriter, r *http.Request) {
+	setupCORS(w, r)
+	if r.Method == "OPTIONS" {
+		return
+	}
+	provider := r.URL.Query().Get("provider")
+	providerID := r.URL.Query().Get("provider_id")
+	if provider == "" || providerID == "" {
+		http.Error(w, "Missing query params: provider and provider_id", http.StatusBadRequest)
+		return
+	}
+
+	db, err := connectToDB()
+	if err != nil {
+		slog.Error("could not connect to Postgres", "error", err)
+		http.Error(w, "Failed to connect to Postgres", http.StatusInternalServerError)
+		return
+	}
+	defer db.Close()
+
+	reviewQuery := "SELECT r.id, r.type, r.colour, r.image_src, r.title, r.subtitle, r.score, r.body, r.created_on, u.provider, u.provider_id, u.name, u.image_src FROM reviews r JOIN users u ON u.provider = r.user_provider AND u.provider_id = r.user_provider_id WHERE r.user_provider = $1 AND r.user_provider_id = $2 ORDER BY r.created_on DESC;"
+
+	reviewRows, err := db.Query(reviewQuery, provider, providerID)
+	if err != nil {
+		slog.Error("could not get timeline", "error", err)
+		http.Error(w, "Failed to get timeline", http.StatusInternalServerError)
+		return
+	}
+	defer reviewRows.Close()
+
+	response := []TimelineResponse{}
+	for reviewRows.Next() {
+		var author Author
+		var timelineElement TimelineResponse
+		var reviewBag ReviewBag
+		if err := reviewRows.Scan(&reviewBag.ID, &reviewBag.Type, &reviewBag.Colour, &reviewBag.ImageSource, &reviewBag.Title, &reviewBag.Subtitle, &reviewBag.Score, &reviewBag.Body, &timelineElement.Timestamp, &author.Provider, &author.ProviderID, &author.Name, &author.Src); err != nil {
+			http.Error(w, "Failed to scan row", http.StatusInternalServerError)
+			return
+		}
+
+		timelineElement.Author = author
+		timelineElement.Data = reviewBag
+		timelineElement.Type = ReviewType
+
+		response = append(response, timelineElement)
+	}
+
+	listQuery := "SELECT l.id, l.type, l.colour, l.title, l.created_on, u.provider, u.provider_id, u.name, u.image_src FROM lists l JOIN users u ON u.provider = l.user_provider AND u.provider_id = l.user_provider_id WHERE l.user_provider = $1 AND l.user_provider_id = $2 ORDER BY l.created_on DESC;"
+
+	listRows, err := db.Query(listQuery, provider, providerID)
+	if err != nil {
+		slog.Error("could not get timeline", "error", err)
+		http.Error(w, "Failed to get timeline", http.StatusInternalServerError)
+		return
+	}
+	defer listRows.Close()
+
+	for listRows.Next() {
+		var author Author
+		var timelineElement TimelineResponse
+		var listBag ListBag
+		if err := listRows.Scan(&listBag.ID, &listBag.Type, &listBag.Colour, &listBag.Title, &timelineElement.Timestamp, &author.Provider, &author.ProviderID, &author.Name, &author.Src); err != nil {
+			slog.Error("could not get timeline", "error", err)
+			http.Error(w, "Failed to scan row", http.StatusInternalServerError)
+			return
+		}
+
+		listElementQuery := "SELECT title, image_src FROM list_elements WHERE list_id = $1 ORDER BY placement ASC;"
+
+		listElementRows, err := db.Query(listElementQuery, listBag.ID)
+		if err != nil {
+			slog.Error("could not get timeline", "error", err)
+			http.Error(w, "Failed to get timeline", http.StatusInternalServerError)
+			return
+		}
+		defer listElementRows.Close()
+
+		var listElements []ListElement
+		for listElementRows.Next() {
+			var listElement ListElement
+			if err := listElementRows.Scan(&listElement.Name, &listElement.ImageSrc); err != nil {
+				slog.Error("could not get timeline", "error", err)
+				http.Error(w, "Failed to scan row", http.StatusInternalServerError)
+				return
+			}
+
+			listElements = append(listElements, listElement)
+		}
+
+		listBag.ListElements = listElements
+		timelineElement.Author = author
+		timelineElement.Data = listBag
+		timelineElement.Type = ListType
+
+		response = append(response, timelineElement)
+	}
+
+	sort.Slice(response, func(i, j int) bool {
+		return response[i].Timestamp.After(response[j].Timestamp)
+	})
+
+	w.WriteHeader(http.StatusOK)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
+func followUser(w http.ResponseWriter, r *http.Request) {
+	setupCORS(w, r)
+	if r.Method == "OPTIONS" {
+		return
+	}
+	followerProvider := r.URL.Query().Get("provider")
+	followerProviderID := r.URL.Query().Get("provider_id")
+	if followerProvider == "" || followerProviderID == "" {
+		http.Error(w, "Missing query params: provider and provider_id", http.StatusBadRequest)
+		return
+	}
+
+	var followUserBody followUserParams
+	decoder := json.NewDecoder(r.Body)
+	if err := decoder.Decode(&followUserBody); err != nil {
+		http.Error(w, "Failed to parse request body", http.StatusBadRequest)
+		return
+	}
+	defer func() {
+		if err := r.Body.Close(); err != nil {
+			slog.Error("failed to close request body", "error", err)
+		}
+	}()
+
+	db, err := connectToDB()
+	if err != nil {
+		slog.Error("could not connect to Postgres", "error", err)
+		http.Error(w, "Failed to connect to Postgres", http.StatusInternalServerError)
+		return
+	}
+	defer db.Close()
+
+	query := "INSERT INTO follower_relation (follower_provider, follower_provider_id, followee_provider, followee_provider_id) VALUES ($1, $2, $3, $4);"
+
+	stmt, err := db.Prepare(query)
+	if err != nil {
+		slog.Error("failed to prepare SQL statement", "error", err)
+		http.Error(w, "Failed to prepare SQL statement", http.StatusInternalServerError)
+		return
+	}
+	defer stmt.Close()
+
+	_, err = stmt.Exec(followerProvider, followerProviderID, followUserBody.Provider, followUserBody.ProviderID)
+	if err != nil {
+		slog.Error("failed to execute SQL statement", "error", err)
+		http.Error(w, "Failed to follow user", http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+	w.Header().Set("Content-Type", "application/json")
 }
