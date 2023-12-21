@@ -33,6 +33,7 @@ type User struct {
 	Colour      string      `json:"colour"`
 	Followers   int         `json:"followers"`
 	Following   int         `json:"following"`
+	IsFollowing bool        `json:"isFollowing"`
 	MusicNotes  []MusicNote `json:"musicNotes"`
 	CreatedOn   time.Time   `json:"createdOn"`
 }
@@ -58,6 +59,8 @@ func getUser(w http.ResponseWriter, r *http.Request) {
 	}
 	provider := r.URL.Query().Get("provider")
 	providerID := r.URL.Query().Get("provider_id")
+	requestingProvider := r.URL.Query().Get("requesting_provider")
+	requestingProviderID := r.URL.Query().Get("requesting_provider_id")
 	if provider == "" || providerID == "" {
 		http.Error(w, "Missing query params: provider and provider_id", http.StatusBadRequest)
 		return
@@ -130,6 +133,26 @@ func getUser(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+
+	numRows := 0
+	if requestingProvider != "" && requestingProviderID != "" {
+		isCurrentUserFollowingQuery := "SELECT count(*) FROM follower_relation WHERE follower_provider = $1 AND follower_provider_id = $2 AND followee_provider= $3 AND followee_provider_id = $4"
+		rows, err = db.Query(isCurrentUserFollowingQuery, requestingProvider, requestingProviderID, provider, providerID)
+		if err != nil {
+			slog.Error("could not get user", "error", err)
+			http.Error(w, "Failed to get user", http.StatusInternalServerError)
+			return
+		}
+		defer rows.Close()
+		for rows.Next() {
+			if err := rows.Scan(&numRows); err != nil {
+				http.Error(w, "Failed to scan row", http.StatusInternalServerError)
+				return
+			}
+		}
+	}
+
+	users[0].IsFollowing = numRows > 0
 
 	query := "SELECT prompt, image_src, title, subtitle FROM music_notes WHERE user_provider = $1 AND user_provider_id = $2;"
 	rows, err = db.Query(query, provider, providerID)
@@ -637,6 +660,59 @@ func followUser(w http.ResponseWriter, r *http.Request) {
 	defer stmt.Close()
 
 	_, err = stmt.Exec(followerProvider, followerProviderID, followUserBody.Provider, followUserBody.ProviderID)
+	if err != nil {
+		slog.Error("failed to execute SQL statement", "error", err)
+		http.Error(w, "Failed to follow user", http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+	w.Header().Set("Content-Type", "application/json")
+}
+
+func unfollowUser(w http.ResponseWriter, r *http.Request) {
+	setupCORS(w, r)
+	if r.Method == "OPTIONS" {
+		return
+	}
+	unfollowerProvider := r.URL.Query().Get("provider")
+	unfollowerProviderID := r.URL.Query().Get("provider_id")
+	if unfollowerProvider == "" || unfollowerProviderID == "" {
+		http.Error(w, "Missing query params: provider and provider_id", http.StatusBadRequest)
+		return
+	}
+
+	var unfollowUserBody followUserParams
+	decoder := json.NewDecoder(r.Body)
+	if err := decoder.Decode(&unfollowUserBody); err != nil {
+		http.Error(w, "Failed to parse request body", http.StatusBadRequest)
+		return
+	}
+	defer func() {
+		if err := r.Body.Close(); err != nil {
+			slog.Error("failed to close request body", "error", err)
+		}
+	}()
+
+	db, err := connectToDB()
+	if err != nil {
+		slog.Error("could not connect to Postgres", "error", err)
+		http.Error(w, "Failed to connect to Postgres", http.StatusInternalServerError)
+		return
+	}
+	defer db.Close()
+
+	query := "DELETE FROM follower_relation WHERE follower_provider = $1 AND follower_provider_id = $2 AND followee_provider = $3 AND followee_provider_id = $4;"
+
+	stmt, err := db.Prepare(query)
+	if err != nil {
+		slog.Error("failed to prepare SQL statement", "error", err)
+		http.Error(w, "Failed to prepare SQL statement", http.StatusInternalServerError)
+		return
+	}
+	defer stmt.Close()
+
+	_, err = stmt.Exec(unfollowerProvider, unfollowerProviderID, unfollowUserBody.Provider, unfollowUserBody.ProviderID)
 	if err != nil {
 		slog.Error("failed to execute SQL statement", "error", err)
 		http.Error(w, "Failed to follow user", http.StatusInternalServerError)
