@@ -10,7 +10,7 @@ func RegisterHandlers() {
 	r := mux.NewRouter()
 	r.HandleFunc("/user", getUser).Methods("GET", "OPTIONS")
 	r.HandleFunc("/user/search", searchUser).Methods("GET", "OPTIONS")
-	r.HandleFunc("/user/posts", getPosts).Methods("GET", "OPTIONS")
+	r.HandleFunc("/user/activity", getActivity).Methods("GET", "OPTIONS")
 	r.HandleFunc("/user", addUser).Methods("POST", "OPTIONS")
 	r.HandleFunc("/user/follow", followUser).Methods("POST", "OPTIONS")
 	r.HandleFunc("/user/unfollow", unfollowUser).Methods("POST", "OPTIONS")

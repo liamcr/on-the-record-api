@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"sort"
@@ -32,11 +33,15 @@ type ReviewBag struct {
 	Body        string `json:"body"`
 }
 
-type Author struct {
+type UserID struct {
 	Provider   string `json:"provider"`
 	ProviderID string `json:"providerId"`
-	Src        string `json:"imageSrc"`
-	Name       string `json:"name"`
+}
+
+type Author struct {
+	UserID
+	Src  string `json:"imageSrc"`
+	Name string `json:"name"`
 }
 
 type TimelineResponse struct {
@@ -66,7 +71,32 @@ func getTimeline(w http.ResponseWriter, r *http.Request) {
 	}
 	defer db.Close()
 
-	reviewQuery := "SELECT r.id, r.type, r.colour, r.image_src, r.title, r.subtitle, r.score, r.body, r.created_on, u.provider, u.provider_id, u.name, u.image_src FROM reviews r JOIN users u ON u.provider = r.user_provider AND u.provider_id = r.user_provider_id WHERE r.user_provider = $1 AND r.user_provider_id = $2 ORDER BY r.created_on DESC;"
+	getFollowedUserIDsQuery := "SELECT followee_provider, followee_provider_id FROM follower_relation WHERE follower_provider = $1 AND follower_provider_id = $2;"
+	followedUserRows, err := db.Query(getFollowedUserIDsQuery, provider, providerID)
+	if err != nil {
+		slog.Error("could not get followed users", "error", err)
+		http.Error(w, "Failed to get timeline", http.StatusInternalServerError)
+		return
+	}
+	defer followedUserRows.Close()
+
+	followedUsers := []UserID{}
+	for followedUserRows.Next() {
+		var userID UserID
+		if err := followedUserRows.Scan(&userID.Provider, &userID.ProviderID); err != nil {
+			http.Error(w, "Failed to scan row", http.StatusInternalServerError)
+			return
+		}
+
+		followedUsers = append(followedUsers, userID)
+	}
+
+	whereClause := "(user_provider = $1 AND user_provider_id = $2)"
+	for _, followedUser := range followedUsers {
+		whereClause = fmt.Sprintf("%s OR (user_provider = '%s' AND user_provider_id = '%s')", whereClause, followedUser.Provider, followedUser.ProviderID)
+	}
+
+	reviewQuery := fmt.Sprintf("SELECT r.id, r.type, r.colour, r.image_src, r.title, r.subtitle, r.score, r.body, r.created_on, u.provider, u.provider_id, u.name, u.image_src FROM reviews r JOIN users u ON u.provider = r.user_provider AND u.provider_id = r.user_provider_id WHERE %s ORDER BY r.created_on DESC;", whereClause)
 
 	reviewRows, err := db.Query(reviewQuery, provider, providerID)
 	if err != nil {
@@ -93,7 +123,7 @@ func getTimeline(w http.ResponseWriter, r *http.Request) {
 		response = append(response, timelineElement)
 	}
 
-	listQuery := "SELECT l.id, l.type, l.colour, l.title, l.created_on, u.provider, u.provider_id, u.name, u.image_src FROM lists l JOIN users u ON u.provider = l.user_provider AND u.provider_id = l.user_provider_id WHERE l.user_provider = $1 AND l.user_provider_id = $2 ORDER BY l.created_on DESC;"
+	listQuery := fmt.Sprintf("SELECT l.id, l.type, l.colour, l.title, l.created_on, u.provider, u.provider_id, u.name, u.image_src FROM lists l JOIN users u ON u.provider = l.user_provider AND u.provider_id = l.user_provider_id WHERE %s ORDER BY l.created_on DESC;", whereClause)
 
 	listRows, err := db.Query(listQuery, provider, providerID)
 	if err != nil {

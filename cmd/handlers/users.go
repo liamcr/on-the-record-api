@@ -511,7 +511,7 @@ func searchUser(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(users)
 }
 
-func getPosts(w http.ResponseWriter, r *http.Request) {
+func getActivity(w http.ResponseWriter, r *http.Request) {
 	setupCORS(w, r)
 	if r.Method == "OPTIONS" {
 		return
