@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"sort"
+	"strconv"
 	"time"
 
 	_ "github.com/lib/pq"
@@ -441,6 +442,26 @@ func deleteUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	query = "DELETE FROM reviews WHERE user_provider = $1 AND user_provider_id = $2"
+
+	_, err = tx.Exec(query, provider, providerID)
+	if err != nil {
+		tx.Rollback()
+		slog.Error("could not delete user", "error", err)
+		http.Error(w, "Failed to delete user", http.StatusInternalServerError)
+		return
+	}
+
+	query = "DELETE FROM follower_relation WHERE (follower_provider = $1 AND follower_provider_id = $2) OR (followee_provider = $1 AND followee_provider_id = $2)"
+
+	_, err = tx.Exec(query, provider, providerID)
+	if err != nil {
+		tx.Rollback()
+		slog.Error("could not delete user", "error", err)
+		http.Error(w, "Failed to delete user", http.StatusInternalServerError)
+		return
+	}
+
 	query = "DELETE FROM users WHERE provider = $1 AND provider_id = $2"
 
 	_, err = tx.Exec(query, provider, providerID)
@@ -521,6 +542,15 @@ func getActivity(w http.ResponseWriter, r *http.Request) {
 	if provider == "" || providerID == "" {
 		http.Error(w, "Missing query params: provider and provider_id", http.StatusBadRequest)
 		return
+	}
+
+	offset, err := strconv.Atoi(r.URL.Query().Get("offset"))
+	if err != nil || offset < 0 {
+		offset = 0
+	}
+	limit, err := strconv.Atoi(r.URL.Query().Get("limit"))
+	if err != nil || limit < 0 {
+		limit = 3
 	}
 
 	db, err := connectToDB()
@@ -612,9 +642,12 @@ func getActivity(w http.ResponseWriter, r *http.Request) {
 		return response[i].Timestamp.After(response[j].Timestamp)
 	})
 
+	start := min(len(response), offset)
+	end := min(len(response), offset+limit)
+
 	w.WriteHeader(http.StatusOK)
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	json.NewEncoder(w).Encode(response[start:end])
 }
 
 func followUser(w http.ResponseWriter, r *http.Request) {
