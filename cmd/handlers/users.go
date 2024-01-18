@@ -34,6 +34,8 @@ type User struct {
 	Colour      string      `json:"colour"`
 	Followers   int         `json:"followers"`
 	Following   int         `json:"following"`
+	Reviews     int         `json:"reviews"`
+	Lists       int         `json:"lists"`
 	IsFollowing bool        `json:"isFollowing"`
 	MusicNotes  []MusicNote `json:"musicNotes"`
 	CreatedOn   time.Time   `json:"createdOn"`
@@ -154,6 +156,36 @@ func getUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	users[0].IsFollowing = numRows > 0
+
+	numReviewsStatement := "SELECT count(*) FROM reviews WHERE user_provider = $1 AND user_provider_id = $2"
+	rows, err = db.Query(numReviewsStatement, provider, providerID)
+	if err != nil {
+		slog.Error("could not get user", "error", err)
+		http.Error(w, "Failed to get user", http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+	for rows.Next() {
+		if err := rows.Scan(&users[0].Reviews); err != nil {
+			http.Error(w, "Failed to scan row", http.StatusInternalServerError)
+			return
+		}
+	}
+
+	numListsStatement := "SELECT count(*) FROM lists WHERE user_provider = $1 AND user_provider_id = $2"
+	rows, err = db.Query(numListsStatement, provider, providerID)
+	if err != nil {
+		slog.Error("could not get user", "error", err)
+		http.Error(w, "Failed to get user", http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+	for rows.Next() {
+		if err := rows.Scan(&users[0].Lists); err != nil {
+			http.Error(w, "Failed to scan row", http.StatusInternalServerError)
+			return
+		}
+	}
 
 	query := "SELECT prompt, image_src, title, subtitle FROM music_notes WHERE user_provider = $1 AND user_provider_id = $2;"
 	rows, err = db.Query(query, provider, providerID)
