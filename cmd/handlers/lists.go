@@ -86,7 +86,7 @@ func addList(w http.ResponseWriter, r *http.Request) {
 	defer stmt.Close()
 
 	id := uuid.NewString()
-	createdOn := time.Now()
+	createdOn := time.Now().UTC()
 	_, err = stmt.Exec(
 		id,
 		addListBody.Provider,

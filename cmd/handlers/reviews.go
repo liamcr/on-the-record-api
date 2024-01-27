@@ -75,7 +75,7 @@ func addReview(w http.ResponseWriter, r *http.Request) {
 	}
 	defer stmt.Close()
 
-	createdOn := time.Now()
+	createdOn := time.Now().UTC()
 	_, err = stmt.Exec(
 		addReviewBody.Provider,
 		addReviewBody.ProviderID,
