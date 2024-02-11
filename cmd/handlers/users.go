@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"sort"
@@ -210,6 +211,68 @@ func getUser(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(users[0])
+}
+
+var featuredUsers = []followUserParams{
+	{
+		Provider:   "spotify",
+		ProviderID: "12176099407",
+	},
+}
+
+func getFeaturedUsers(w http.ResponseWriter, r *http.Request) {
+	setupCORS(w, r)
+	if r.Method == "OPTIONS" {
+		return
+	}
+
+	db, err := connectToDB()
+	if err != nil {
+		slog.Error("could not connect to Postgres", "error", err)
+		http.Error(w, "Failed to connect to Postgres", http.StatusInternalServerError)
+		return
+	}
+	defer db.Close()
+
+	whereClause := "(provider = $1 AND provider_id = $2)"
+	params := []any{featuredUsers[0].Provider, featuredUsers[0].ProviderID}
+	for i, user := range featuredUsers {
+		if i == 0 {
+			continue
+		}
+
+		whereClause += fmt.Sprintf(" OR (provider = $%d AND provider_id = $%d)", i*2+1, i*2+2)
+		params = append(params, user.Provider, user.ProviderID)
+	}
+
+	selectStatement := "SELECT provider, provider_id, name, image_src FROM users WHERE " + whereClause
+	rows, err := db.Query(selectStatement, params...)
+	if err != nil {
+		slog.Error("could not get featured users", "error", err)
+		http.Error(w, "Failed to get user", http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	var users []UserCondensed
+	for rows.Next() {
+		var user UserCondensed
+		if err := rows.Scan(&user.Provider, &user.ProviderID, &user.Name, &user.ImageSource); err != nil {
+			http.Error(w, "Failed to scan row", http.StatusInternalServerError)
+			return
+		}
+		users = append(users, user)
+	}
+
+	if len(users) == 0 {
+		slog.Error("could not find featured users")
+		http.Error(w, "Couldn't find user", http.StatusNotFound)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(users)
 }
 
 func addUser(w http.ResponseWriter, r *http.Request) {
