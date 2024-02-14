@@ -196,7 +196,7 @@ func getUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var musicNotes []MusicNote
+	musicNotes := []MusicNote{}
 	for rows.Next() {
 		var musicNote MusicNote
 		if err := rows.Scan(&musicNote.Prompt, &musicNote.ImageSource, &musicNote.Title, &musicNote.Subtitle); err != nil {
