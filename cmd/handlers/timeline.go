@@ -25,6 +25,7 @@ type ListBag struct {
 
 type ReviewBag struct {
 	ID          int    `json:"id"`
+	EntityID    string `json:"entityId"`
 	Type        int    `json:"type"`
 	Title       string `json:"title"`
 	Subtitle    string `json:"subtitle"`
@@ -34,22 +35,11 @@ type ReviewBag struct {
 	Body        string `json:"body"`
 }
 
-type UserID struct {
-	Provider   string `json:"provider"`
-	ProviderID string `json:"providerId"`
-}
-
-type Author struct {
-	UserID
-	Src  string `json:"imageSrc"`
-	Name string `json:"name"`
-}
-
 type TimelineResponse struct {
-	Author    Author      `json:"author"`
-	Type      int         `json:"type"`
-	Timestamp time.Time   `json:"timestamp"`
-	Data      interface{} `json:"data"`
+	Author    UserCondensed `json:"author"`
+	Type      int           `json:"type"`
+	Timestamp time.Time     `json:"timestamp"`
+	Data      interface{}   `json:"data"`
 }
 
 func getTimeline(w http.ResponseWriter, r *http.Request) {
@@ -57,10 +47,9 @@ func getTimeline(w http.ResponseWriter, r *http.Request) {
 	if r.Method == "OPTIONS" {
 		return
 	}
-	provider := r.URL.Query().Get("provider")
-	providerID := r.URL.Query().Get("provider_id")
-	if provider == "" || providerID == "" {
-		http.Error(w, "Missing query params: provider and provider_id", http.StatusBadRequest)
+	ID := r.URL.Query().Get("id")
+	if ID == "" {
+		http.Error(w, "Missing query param: id", http.StatusBadRequest)
 		return
 	}
 
@@ -81,8 +70,8 @@ func getTimeline(w http.ResponseWriter, r *http.Request) {
 	}
 	defer db.Close()
 
-	getFollowedUserIDsQuery := "SELECT followee_provider, followee_provider_id FROM follower_relation WHERE follower_provider = $1 AND follower_provider_id = $2;"
-	followedUserRows, err := db.Query(getFollowedUserIDsQuery, provider, providerID)
+	getFollowedUserIDsQuery := "SELECT followee_id FROM follower_relation WHERE follower_id = $1;"
+	followedUserRows, err := db.Query(getFollowedUserIDsQuery, getFollowedUserIDsQuery)
 	if err != nil {
 		slog.Error("could not get followed users", "error", err)
 		http.Error(w, "Failed to get timeline", http.StatusInternalServerError)
@@ -90,10 +79,10 @@ func getTimeline(w http.ResponseWriter, r *http.Request) {
 	}
 	defer followedUserRows.Close()
 
-	followedUsers := []UserID{}
+	followedUsers := []string{}
 	for followedUserRows.Next() {
-		var userID UserID
-		if err := followedUserRows.Scan(&userID.Provider, &userID.ProviderID); err != nil {
+		var userID string
+		if err := followedUserRows.Scan(&userID); err != nil {
 			http.Error(w, "Failed to scan row", http.StatusInternalServerError)
 			return
 		}
@@ -101,14 +90,14 @@ func getTimeline(w http.ResponseWriter, r *http.Request) {
 		followedUsers = append(followedUsers, userID)
 	}
 
-	whereClause := "(user_provider = $1 AND user_provider_id = $2)"
+	whereClause := "user_id = $1"
 	for _, followedUser := range followedUsers {
-		whereClause = fmt.Sprintf("%s OR (user_provider = '%s' AND user_provider_id = '%s')", whereClause, followedUser.Provider, followedUser.ProviderID)
+		whereClause = fmt.Sprintf("%s OR user_id = '%s'", whereClause, followedUser)
 	}
 
-	reviewQuery := fmt.Sprintf("SELECT r.id, r.type, r.colour, r.image_src, r.title, r.subtitle, r.score, r.body, r.created_on, u.provider, u.provider_id, u.name, u.image_src FROM reviews r JOIN users u ON u.provider = r.user_provider AND u.provider_id = r.user_provider_id WHERE %s ORDER BY r.created_on DESC;", whereClause)
+	reviewQuery := fmt.Sprintf("SELECT r.id, r.entity_id, r.type, r.colour, r.image_src, r.title, r.subtitle, r.score, r.body, r.created_on, u.id, u.name, u.image_src FROM reviews r JOIN users u ON u.id = r.user_id WHERE %s ORDER BY r.created_on DESC;", whereClause)
 
-	reviewRows, err := db.Query(reviewQuery, provider, providerID)
+	reviewRows, err := db.Query(reviewQuery, ID)
 	if err != nil {
 		slog.Error("could not get timeline", "error", err)
 		http.Error(w, "Failed to get timeline", http.StatusInternalServerError)
@@ -118,10 +107,10 @@ func getTimeline(w http.ResponseWriter, r *http.Request) {
 
 	response := []TimelineResponse{}
 	for reviewRows.Next() {
-		var author Author
+		var author UserCondensed
 		var timelineElement TimelineResponse
 		var reviewBag ReviewBag
-		if err := reviewRows.Scan(&reviewBag.ID, &reviewBag.Type, &reviewBag.Colour, &reviewBag.ImageSource, &reviewBag.Title, &reviewBag.Subtitle, &reviewBag.Score, &reviewBag.Body, &timelineElement.Timestamp, &author.Provider, &author.ProviderID, &author.Name, &author.Src); err != nil {
+		if err := reviewRows.Scan(&reviewBag.ID, &reviewBag.EntityID, &reviewBag.Type, &reviewBag.Colour, &reviewBag.ImageSource, &reviewBag.Title, &reviewBag.Subtitle, &reviewBag.Score, &reviewBag.Body, &timelineElement.Timestamp, &author.ID, &author.Name, &author.ImageSource); err != nil {
 			http.Error(w, "Failed to scan row", http.StatusInternalServerError)
 			return
 		}
@@ -133,9 +122,9 @@ func getTimeline(w http.ResponseWriter, r *http.Request) {
 		response = append(response, timelineElement)
 	}
 
-	listQuery := fmt.Sprintf("SELECT l.id, l.type, l.colour, l.title, l.created_on, u.provider, u.provider_id, u.name, u.image_src FROM lists l JOIN users u ON u.provider = l.user_provider AND u.provider_id = l.user_provider_id WHERE %s ORDER BY l.created_on DESC;", whereClause)
+	listQuery := fmt.Sprintf("SELECT l.id, l.type, l.colour, l.title, l.created_on, u.id, u.name, u.image_src FROM lists l JOIN users u ON u.id = l.user_id WHERE %s ORDER BY l.created_on DESC;", whereClause)
 
-	listRows, err := db.Query(listQuery, provider, providerID)
+	listRows, err := db.Query(listQuery, ID)
 	if err != nil {
 		slog.Error("could not get timeline", "error", err)
 		http.Error(w, "Failed to get timeline", http.StatusInternalServerError)
@@ -144,16 +133,16 @@ func getTimeline(w http.ResponseWriter, r *http.Request) {
 	defer listRows.Close()
 
 	for listRows.Next() {
-		var author Author
+		var author UserCondensed
 		var timelineElement TimelineResponse
 		var listBag ListBag
-		if err := listRows.Scan(&listBag.ID, &listBag.Type, &listBag.Colour, &listBag.Title, &timelineElement.Timestamp, &author.Provider, &author.ProviderID, &author.Name, &author.Src); err != nil {
+		if err := listRows.Scan(&listBag.ID, &listBag.Type, &listBag.Colour, &listBag.Title, &timelineElement.Timestamp, &author.ID, &author.Name, &author.ImageSource); err != nil {
 			slog.Error("could not get timeline", "error", err)
 			http.Error(w, "Failed to scan row", http.StatusInternalServerError)
 			return
 		}
 
-		listElementQuery := "SELECT title, image_src FROM list_elements WHERE list_id = $1 ORDER BY placement ASC;"
+		listElementQuery := "SELECT entity_id, title, image_src FROM list_elements WHERE list_id = $1 ORDER BY placement ASC;"
 
 		listElementRows, err := db.Query(listElementQuery, listBag.ID)
 		if err != nil {
@@ -166,7 +155,7 @@ func getTimeline(w http.ResponseWriter, r *http.Request) {
 		var listElements []ListElement
 		for listElementRows.Next() {
 			var listElement ListElement
-			if err := listElementRows.Scan(&listElement.Name, &listElement.ImageSrc); err != nil {
+			if err := listElementRows.Scan(&listElement.EntityID, &listElement.Name, &listElement.ImageSrc); err != nil {
 				slog.Error("could not get timeline", "error", err)
 				http.Error(w, "Failed to scan row", http.StatusInternalServerError)
 				return

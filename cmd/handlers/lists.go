@@ -12,13 +12,13 @@ import (
 )
 
 type ListElement struct {
+	EntityID string `json:"entityId"`
 	Name     string `json:"name"`
 	ImageSrc string `json:"src"`
 }
 
 type addListParams struct {
-	Provider     string        `json:"provider"`
-	ProviderID   string        `json:"providerId"`
+	UserID       string        `json:"userId"`
 	Type         int           `json:"type"`
 	Title        string        `json:"title"`
 	Colour       string        `json:"colour"`
@@ -26,8 +26,7 @@ type addListParams struct {
 }
 
 type List struct {
-	Provider     string        `json:"provider"`
-	ProviderID   string        `json:"providerId"`
+	UserID       string        `json:"userId"`
 	Type         int           `json:"type"`
 	Title        string        `json:"title"`
 	Colour       string        `json:"colour"`
@@ -74,7 +73,7 @@ func addList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	query := "INSERT INTO lists (id, user_provider, user_provider_id, type, title, colour, created_on) VALUES ($1, $2, $3, $4, $5, $6, $7);"
+	query := "INSERT INTO lists (id, user_id, type, title, colour, created_on) VALUES ($1, $2, $3, $4, $5, $6);"
 
 	stmt, err := tx.Prepare(query)
 	if err != nil {
@@ -89,8 +88,7 @@ func addList(w http.ResponseWriter, r *http.Request) {
 	createdOn := time.Now().UTC()
 	_, err = stmt.Exec(
 		id,
-		addListBody.Provider,
-		addListBody.ProviderID,
+		addListBody.UserID,
 		addListBody.Type,
 		addListBody.Title,
 		addListBody.Colour,
@@ -103,7 +101,7 @@ func addList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	query = "INSERT INTO list_elements (list_id, title, image_src, placement) VALUES ($1, $2, $3, 1), ($1, $4, $5, 2), ($1, $6, $7, 3), ($1, $8, $9, 4), ($1, $10, $11, 5);"
+	query = "INSERT INTO list_elements (list_id, user_id, entity_id, title, image_src, placement) VALUES ($1, $2, $3, $4, $5, 1), ($1, $2, $6, $7, $8, 2), ($1, $2, $9, $10, $11, 3), ($1, $2, $12, $13, $14, 4), ($1, $2, $15, $16, $17, 5);"
 
 	stmt, err = tx.Prepare(query)
 	if err != nil {
@@ -115,14 +113,20 @@ func addList(w http.ResponseWriter, r *http.Request) {
 
 	_, err = stmt.Exec(
 		id,
+		addListBody.UserID,
+		addListBody.ListElements[0].EntityID,
 		addListBody.ListElements[0].Name,
 		addListBody.ListElements[0].ImageSrc,
+		addListBody.ListElements[1].EntityID,
 		addListBody.ListElements[1].Name,
 		addListBody.ListElements[1].ImageSrc,
+		addListBody.ListElements[2].EntityID,
 		addListBody.ListElements[2].Name,
 		addListBody.ListElements[2].ImageSrc,
+		addListBody.ListElements[3].EntityID,
 		addListBody.ListElements[3].Name,
 		addListBody.ListElements[3].ImageSrc,
+		addListBody.ListElements[4].EntityID,
 		addListBody.ListElements[4].Name,
 		addListBody.ListElements[4].ImageSrc,
 	)
@@ -142,8 +146,7 @@ func addList(w http.ResponseWriter, r *http.Request) {
 	}
 
 	resp := List{
-		Provider:     addListBody.Provider,
-		ProviderID:   addListBody.ProviderID,
+		UserID:       addListBody.UserID,
 		Title:        addListBody.Title,
 		Colour:       addListBody.Colour,
 		ListElements: addListBody.ListElements,
