@@ -59,7 +59,7 @@ func getUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ID := r.URL.Query().Get("id")
-	requestingID := r.URL.Query().Get("requestingId")
+	requestingID := r.URL.Query().Get("requesting_id")
 	if ID == "" {
 		http.Error(w, "Missing query param: id", http.StatusBadRequest)
 		return
@@ -210,7 +210,7 @@ func getUser(w http.ResponseWriter, r *http.Request) {
 
 var featuredUsers = []followUserParams{
 	{
-		ID: "1234",
+		ID: "2114595843372308472544",
 	},
 }
 

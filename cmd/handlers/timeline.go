@@ -71,7 +71,7 @@ func getTimeline(w http.ResponseWriter, r *http.Request) {
 	defer db.Close()
 
 	getFollowedUserIDsQuery := "SELECT followee_id FROM follower_relation WHERE follower_id = $1;"
-	followedUserRows, err := db.Query(getFollowedUserIDsQuery, getFollowedUserIDsQuery)
+	followedUserRows, err := db.Query(getFollowedUserIDsQuery, ID)
 	if err != nil {
 		slog.Error("could not get followed users", "error", err)
 		http.Error(w, "Failed to get timeline", http.StatusInternalServerError)
