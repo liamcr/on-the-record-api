@@ -11,8 +11,8 @@ import (
 )
 
 type addReviewParams struct {
-	Provider    string `json:"provider"`
-	ProviderID  string `json:"providerId"`
+	UserID      string `json:"userId"`
+	EntityID    string `json:"entityId"`
 	Type        int    `json:"type"`
 	Title       string `json:"title"`
 	Subtitle    string `json:"subtitle"`
@@ -22,8 +22,8 @@ type addReviewParams struct {
 }
 
 type Review struct {
-	Provider    string    `json:"provider"`
-	ProviderID  string    `json:"providerId"`
+	UserID      string    `json:"userId"`
+	EntityID    string    `json:"entityId"`
 	Type        int       `json:"type"`
 	Title       string    `json:"title"`
 	Subtitle    string    `json:"subtitle"`
@@ -65,7 +65,7 @@ func addReview(w http.ResponseWriter, r *http.Request) {
 	}
 	defer db.Close()
 
-	query := "INSERT INTO reviews (user_provider, user_provider_id, type, title, subtitle, colour, image_src, score, body, created_on) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10);"
+	query := "INSERT INTO reviews (user_id, entity_id, type, title, subtitle, colour, image_src, score, body, created_on) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10);"
 
 	stmt, err := db.Prepare(query)
 	if err != nil {
@@ -77,8 +77,8 @@ func addReview(w http.ResponseWriter, r *http.Request) {
 
 	createdOn := time.Now().UTC()
 	_, err = stmt.Exec(
-		addReviewBody.Provider,
-		addReviewBody.ProviderID,
+		addReviewBody.UserID,
+		addReviewBody.EntityID,
 		addReviewBody.Type,
 		addReviewBody.Title,
 		addReviewBody.Subtitle,
@@ -95,8 +95,8 @@ func addReview(w http.ResponseWriter, r *http.Request) {
 	}
 
 	resp := Review{
-		Provider:    addReviewBody.Provider,
-		ProviderID:  addReviewBody.ProviderID,
+		UserID:      addReviewBody.UserID,
+		EntityID:    addReviewBody.EntityID,
 		Title:       addReviewBody.Title,
 		Subtitle:    addReviewBody.Subtitle,
 		Colour:      dominantColour,
@@ -134,14 +134,14 @@ func deleteReview(w http.ResponseWriter, r *http.Request) {
 
 	_, err = db.Exec(query, id)
 	if err != nil {
-		slog.Error("could not delete user", "error", err)
-		http.Error(w, "Failed to delete user", http.StatusInternalServerError)
+		slog.Error("could not delete review", "error", err)
+		http.Error(w, "Failed to delete review", http.StatusInternalServerError)
 		return
 	}
 
 	if err != nil {
 		slog.Error("failed to commit transaction", "error", err)
-		http.Error(w, "Failed to add user", http.StatusInternalServerError)
+		http.Error(w, "Failed to add review", http.StatusInternalServerError)
 		return
 	}
 

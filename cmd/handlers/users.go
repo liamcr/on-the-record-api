@@ -14,8 +14,7 @@ import (
 )
 
 type addUserParams struct {
-	Provider    string      `json:"provider"`
-	ProviderID  string      `json:"providerId"`
+	ID          string      `json:"id"`
 	Name        string      `json:"name"`
 	ImageSource string      `json:"imageSrc"`
 	Colour      string      `json:"colour"`
@@ -23,13 +22,11 @@ type addUserParams struct {
 }
 
 type followUserParams struct {
-	Provider   string `json:"provider"`
-	ProviderID string `json:"providerId"`
+	ID string `json:"id"`
 }
 
 type User struct {
-	Provider    string      `json:"provider"`
-	ProviderID  string      `json:"providerId"`
+	ID          string      `json:"id"`
 	Name        string      `json:"name"`
 	ImageSource string      `json:"imageSrc"`
 	Colour      string      `json:"colour"`
@@ -43,13 +40,13 @@ type User struct {
 }
 
 type UserCondensed struct {
-	Provider    string `json:"provider"`
-	ProviderID  string `json:"providerId"`
+	ID          string `json:"id"`
 	Name        string `json:"name"`
 	ImageSource string `json:"imageSrc"`
 }
 
 type MusicNote struct {
+	EntityID    string `json:"entityId"`
 	Prompt      string `json:"prompt"`
 	ImageSource string `json:"imageSrc"`
 	Title       string `json:"title"`
@@ -61,12 +58,10 @@ func getUser(w http.ResponseWriter, r *http.Request) {
 	if r.Method == "OPTIONS" {
 		return
 	}
-	provider := r.URL.Query().Get("provider")
-	providerID := r.URL.Query().Get("provider_id")
-	requestingProvider := r.URL.Query().Get("requesting_provider")
-	requestingProviderID := r.URL.Query().Get("requesting_provider_id")
-	if provider == "" || providerID == "" {
-		http.Error(w, "Missing query params: provider and provider_id", http.StatusBadRequest)
+	ID := r.URL.Query().Get("id")
+	requestingID := r.URL.Query().Get("requesting_id")
+	if ID == "" {
+		http.Error(w, "Missing query param: id", http.StatusBadRequest)
 		return
 	}
 
@@ -78,8 +73,8 @@ func getUser(w http.ResponseWriter, r *http.Request) {
 	}
 	defer db.Close()
 
-	selectStatement := "SELECT provider, provider_id, name, colour, image_src, created_on FROM users WHERE provider = $1 AND provider_id = $2"
-	rows, err := db.Query(selectStatement, provider, providerID)
+	selectStatement := "SELECT id, name, colour, image_src, created_on FROM users WHERE id = $1"
+	rows, err := db.Query(selectStatement, ID)
 	if err != nil {
 		slog.Error("could not get user", "error", err)
 		http.Error(w, "Failed to get user", http.StatusInternalServerError)
@@ -90,7 +85,7 @@ func getUser(w http.ResponseWriter, r *http.Request) {
 	var users []User
 	for rows.Next() {
 		var user User
-		if err := rows.Scan(&user.Provider, &user.ProviderID, &user.Name, &user.Colour, &user.ImageSource, &user.CreatedOn); err != nil {
+		if err := rows.Scan(&user.ID, &user.Name, &user.Colour, &user.ImageSource, &user.CreatedOn); err != nil {
 			http.Error(w, "Failed to scan row", http.StatusInternalServerError)
 			return
 		}
@@ -98,18 +93,18 @@ func getUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if len(users) == 0 {
-		slog.Error("could not find user", "provider", provider, "provider_id", providerID)
+		slog.Error("could not find user", "id", ID)
 		http.Error(w, "Couldn't find user", http.StatusNotFound)
 		return
 	}
 	if len(users) > 1 {
-		slog.Error("expected 1 user, found more", "matching_users", len(users), "provider", provider, "provider_id", providerID)
+		slog.Error("expected 1 user, found more", "matching_users", len(users), "id", ID)
 		http.Error(w, "found too many matching users", http.StatusInternalServerError)
 		return
 	}
 
-	numFollowersStatement := "SELECT count(*) FROM follower_relation WHERE followee_provider = $1 AND followee_provider_id = $2"
-	rows, err = db.Query(numFollowersStatement, provider, providerID)
+	numFollowersStatement := "SELECT count(*) FROM follower_relation WHERE followee_id = $1"
+	rows, err = db.Query(numFollowersStatement, ID)
 	if err != nil {
 		slog.Error("could not get user", "error", err)
 		http.Error(w, "Failed to get user", http.StatusInternalServerError)
@@ -123,8 +118,8 @@ func getUser(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	numFollowingStatement := "SELECT count(*) FROM follower_relation WHERE follower_provider = $1 AND follower_provider_id = $2"
-	rows, err = db.Query(numFollowingStatement, provider, providerID)
+	numFollowingStatement := "SELECT count(*) FROM follower_relation WHERE follower_id = $1"
+	rows, err = db.Query(numFollowingStatement, ID)
 	if err != nil {
 		slog.Error("could not get user", "error", err)
 		http.Error(w, "Failed to get user", http.StatusInternalServerError)
@@ -139,9 +134,9 @@ func getUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	numRows := 0
-	if requestingProvider != "" && requestingProviderID != "" {
-		isCurrentUserFollowingQuery := "SELECT count(*) FROM follower_relation WHERE follower_provider = $1 AND follower_provider_id = $2 AND followee_provider= $3 AND followee_provider_id = $4"
-		rows, err = db.Query(isCurrentUserFollowingQuery, requestingProvider, requestingProviderID, provider, providerID)
+	if requestingID != "" {
+		isCurrentUserFollowingQuery := "SELECT count(*) FROM follower_relation WHERE follower_id = $1 AND followee_id = $2"
+		rows, err = db.Query(isCurrentUserFollowingQuery, requestingID, ID)
 		if err != nil {
 			slog.Error("could not get user", "error", err)
 			http.Error(w, "Failed to get user", http.StatusInternalServerError)
@@ -158,8 +153,8 @@ func getUser(w http.ResponseWriter, r *http.Request) {
 
 	users[0].IsFollowing = numRows > 0
 
-	numReviewsStatement := "SELECT count(*) FROM reviews WHERE user_provider = $1 AND user_provider_id = $2"
-	rows, err = db.Query(numReviewsStatement, provider, providerID)
+	numReviewsStatement := "SELECT count(*) FROM reviews WHERE user_id = $1"
+	rows, err = db.Query(numReviewsStatement, ID)
 	if err != nil {
 		slog.Error("could not get user", "error", err)
 		http.Error(w, "Failed to get user", http.StatusInternalServerError)
@@ -173,8 +168,8 @@ func getUser(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	numListsStatement := "SELECT count(*) FROM lists WHERE user_provider = $1 AND user_provider_id = $2"
-	rows, err = db.Query(numListsStatement, provider, providerID)
+	numListsStatement := "SELECT count(*) FROM lists WHERE user_id = $1"
+	rows, err = db.Query(numListsStatement, ID)
 	if err != nil {
 		slog.Error("could not get user", "error", err)
 		http.Error(w, "Failed to get user", http.StatusInternalServerError)
@@ -188,8 +183,8 @@ func getUser(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	query := "SELECT prompt, image_src, title, subtitle FROM music_notes WHERE user_provider = $1 AND user_provider_id = $2;"
-	rows, err = db.Query(query, provider, providerID)
+	query := "SELECT entity_id, prompt, image_src, title, subtitle FROM music_notes WHERE user_id = $1;"
+	rows, err = db.Query(query, ID)
 	if err != nil {
 		slog.Error("could not get user", "error", err)
 		http.Error(w, "Failed to get user", http.StatusInternalServerError)
@@ -199,7 +194,7 @@ func getUser(w http.ResponseWriter, r *http.Request) {
 	musicNotes := []MusicNote{}
 	for rows.Next() {
 		var musicNote MusicNote
-		if err := rows.Scan(&musicNote.Prompt, &musicNote.ImageSource, &musicNote.Title, &musicNote.Subtitle); err != nil {
+		if err := rows.Scan(&musicNote.EntityID, &musicNote.Prompt, &musicNote.ImageSource, &musicNote.Title, &musicNote.Subtitle); err != nil {
 			http.Error(w, "Failed to scan row", http.StatusInternalServerError)
 			return
 		}
@@ -215,8 +210,7 @@ func getUser(w http.ResponseWriter, r *http.Request) {
 
 var featuredUsers = []followUserParams{
 	{
-		Provider:   "spotify",
-		ProviderID: "12176099407",
+		ID: "2114595843372308472544",
 	},
 }
 
@@ -234,18 +228,18 @@ func getFeaturedUsers(w http.ResponseWriter, r *http.Request) {
 	}
 	defer db.Close()
 
-	whereClause := "(provider = $1 AND provider_id = $2)"
-	params := []any{featuredUsers[0].Provider, featuredUsers[0].ProviderID}
+	whereClause := "(id = $1)"
+	params := []any{featuredUsers[0].ID}
 	for i, user := range featuredUsers {
 		if i == 0 {
 			continue
 		}
 
-		whereClause += fmt.Sprintf(" OR (provider = $%d AND provider_id = $%d)", i*2+1, i*2+2)
-		params = append(params, user.Provider, user.ProviderID)
+		whereClause += fmt.Sprintf(" OR (id = $%d)", i+1)
+		params = append(params, user.ID)
 	}
 
-	selectStatement := "SELECT provider, provider_id, name, image_src FROM users WHERE " + whereClause
+	selectStatement := "SELECT id, name, image_src FROM users WHERE " + whereClause
 	rows, err := db.Query(selectStatement, params...)
 	if err != nil {
 		slog.Error("could not get featured users", "error", err)
@@ -257,7 +251,7 @@ func getFeaturedUsers(w http.ResponseWriter, r *http.Request) {
 	var users []UserCondensed
 	for rows.Next() {
 		var user UserCondensed
-		if err := rows.Scan(&user.Provider, &user.ProviderID, &user.Name, &user.ImageSource); err != nil {
+		if err := rows.Scan(&user.ID, &user.Name, &user.ImageSource); err != nil {
 			http.Error(w, "Failed to scan row", http.StatusInternalServerError)
 			return
 		}
@@ -301,17 +295,17 @@ func addUser(w http.ResponseWriter, r *http.Request) {
 	defer db.Close()
 
 	// Make sure user doesn't already have an account
-	checkIfUserExistsQuery := "SELECT COUNT(*) FROM users WHERE provider = $1 AND provider_id = $2"
+	checkIfUserExistsQuery := "SELECT COUNT(*) FROM users WHERE id = $1"
 
 	var count int
-	err = db.QueryRow(checkIfUserExistsQuery, addUserBody.Provider, addUserBody.ProviderID).Scan(&count)
+	err = db.QueryRow(checkIfUserExistsQuery, addUserBody.ID).Scan(&count)
 	if err != nil {
 		slog.Error("failed to execute SQL statement", "error", err)
 		http.Error(w, "Failed to add user", http.StatusInternalServerError)
 		return
 	}
 	if count > 0 {
-		slog.Error("this user already has an account", "provider", addUserBody.Provider, "provider_id", addUserBody.ProviderID)
+		slog.Error("this user already has an account", "id", addUserBody.ID)
 		http.Error(w, "this user already has an account", http.StatusBadRequest)
 		return
 	}
@@ -324,7 +318,7 @@ func addUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	query := "INSERT INTO users (provider, provider_id, name, colour, image_src, created_on) VALUES ($1, $2, $3, $4, $5, $6);"
+	query := "INSERT INTO users (id, name, colour, image_src, created_on) VALUES ($1, $2, $3, $4, $5);"
 
 	stmt, err := tx.Prepare(query)
 	if err != nil {
@@ -336,7 +330,7 @@ func addUser(w http.ResponseWriter, r *http.Request) {
 	defer stmt.Close()
 
 	createdOn := time.Now()
-	_, err = stmt.Exec(addUserBody.Provider, addUserBody.ProviderID, addUserBody.Name, addUserBody.Colour, addUserBody.ImageSource, createdOn)
+	_, err = stmt.Exec(addUserBody.ID, addUserBody.Name, addUserBody.Colour, addUserBody.ImageSource, createdOn)
 	if err != nil {
 		tx.Rollback()
 		slog.Error("failed to execute SQL statement", "error", err)
@@ -344,7 +338,7 @@ func addUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	insertMusicNoteQuery := "INSERT INTO music_notes (user_provider, user_provider_id, prompt, image_src, title, subtitle) VALUES ($1, $2, $3, $4, $5, $6);"
+	insertMusicNoteQuery := "INSERT INTO music_notes (user_id, entity_id, prompt, image_src, title, subtitle) VALUES ($1, $2, $3, $4, $5, $6);"
 	for _, musicNote := range addUserBody.MusicNotes {
 		stmt, err := tx.Prepare(insertMusicNoteQuery)
 		if err != nil {
@@ -355,7 +349,7 @@ func addUser(w http.ResponseWriter, r *http.Request) {
 		}
 		defer stmt.Close()
 
-		_, err = stmt.Exec(addUserBody.Provider, addUserBody.ProviderID, musicNote.Prompt, musicNote.ImageSource, musicNote.Title, musicNote.Subtitle)
+		_, err = stmt.Exec(addUserBody.ID, musicNote.EntityID, musicNote.Prompt, musicNote.ImageSource, musicNote.Title, musicNote.Subtitle)
 		if err != nil {
 			tx.Rollback()
 			slog.Error("failed to execute SQL statement", "error", err)
@@ -373,8 +367,7 @@ func addUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	resp := User{
-		Provider:    addUserBody.Provider,
-		ProviderID:  addUserBody.ProviderID,
+		ID:          addUserBody.ID,
 		Name:        addUserBody.Name,
 		ImageSource: addUserBody.ImageSource,
 		Colour:      addUserBody.Colour,
@@ -412,18 +405,18 @@ func updateUser(w http.ResponseWriter, r *http.Request) {
 	}
 	defer db.Close()
 
-	// Make sure user user exists
-	checkIfUserExistsQuery := "SELECT COUNT(*) FROM users WHERE provider = $1 AND provider_id = $2"
+	// Make sure user exists
+	checkIfUserExistsQuery := "SELECT COUNT(*) FROM users WHERE id = $1"
 
 	var count int
-	err = db.QueryRow(checkIfUserExistsQuery, updateUserBody.Provider, updateUserBody.ProviderID).Scan(&count)
+	err = db.QueryRow(checkIfUserExistsQuery, updateUserBody.ID).Scan(&count)
 	if err != nil {
 		slog.Error("failed to execute SQL statement", "error", err)
 		http.Error(w, "Failed to add user", http.StatusInternalServerError)
 		return
 	}
 	if count == 0 {
-		slog.Error("could not find user", "provider", updateUserBody.Provider, "provider_id", updateUserBody.ProviderID)
+		slog.Error("could not find user", "id", updateUserBody.ID)
 		http.Error(w, "user not found", http.StatusNotFound)
 		return
 	}
@@ -436,9 +429,9 @@ func updateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	query := "UPDATE users SET name = $3, colour = $4, image_src = $5 WHERE provider = $1 AND provider_id = $2;"
+	query := "UPDATE users SET name = $2, colour = $3, image_src = $4 WHERE id = $1;"
 
-	_, err = tx.Exec(query, updateUserBody.Provider, updateUserBody.ProviderID, updateUserBody.Name, updateUserBody.Colour, updateUserBody.ImageSource)
+	_, err = tx.Exec(query, updateUserBody.ID, updateUserBody.Name, updateUserBody.Colour, updateUserBody.ImageSource)
 	if err != nil {
 		tx.Rollback()
 		slog.Error("failed to execute SQL statement", "error", err)
@@ -447,9 +440,9 @@ func updateUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Delete existing music notes in order to overwrite them with the new ones
-	query = "DELETE FROM music_notes WHERE user_provider = $1 AND user_provider_id = $2"
+	query = "DELETE FROM music_notes WHERE user_id = $1"
 
-	_, err = tx.Exec(query, updateUserBody.Provider, updateUserBody.ProviderID)
+	_, err = tx.Exec(query, updateUserBody.ID)
 	if err != nil {
 		tx.Rollback()
 		slog.Error("could not delete user", "error", err)
@@ -457,7 +450,7 @@ func updateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	insertMusicNoteQuery := "INSERT INTO music_notes (user_provider, user_provider_id, prompt, image_src, title, subtitle) VALUES ($1, $2, $3, $4, $5, $6);"
+	insertMusicNoteQuery := "INSERT INTO music_notes (user_id, entity_id, prompt, image_src, title, subtitle) VALUES ($1, $2, $3, $4, $5, $6);"
 	for _, musicNote := range updateUserBody.MusicNotes {
 		stmt, err := tx.Prepare(insertMusicNoteQuery)
 		if err != nil {
@@ -468,7 +461,7 @@ func updateUser(w http.ResponseWriter, r *http.Request) {
 		}
 		defer stmt.Close()
 
-		_, err = stmt.Exec(updateUserBody.Provider, updateUserBody.ProviderID, musicNote.Prompt, musicNote.ImageSource, musicNote.Title, musicNote.Subtitle)
+		_, err = stmt.Exec(updateUserBody.ID, musicNote.EntityID, musicNote.Prompt, musicNote.ImageSource, musicNote.Title, musicNote.Subtitle)
 		if err != nil {
 			tx.Rollback()
 			slog.Error("failed to execute SQL statement", "error", err)
@@ -486,8 +479,7 @@ func updateUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	resp := addUserParams{
-		Provider:    updateUserBody.Provider,
-		ProviderID:  updateUserBody.ProviderID,
+		ID:          updateUserBody.ID,
 		Name:        updateUserBody.Name,
 		ImageSource: updateUserBody.ImageSource,
 		Colour:      updateUserBody.Colour,
@@ -512,10 +504,9 @@ func deleteUser(w http.ResponseWriter, r *http.Request) {
 	}
 	defer db.Close()
 
-	provider := r.URL.Query().Get("provider")
-	providerID := r.URL.Query().Get("provider_id")
-	if provider == "" || providerID == "" {
-		http.Error(w, "Missing query params: provider and provider_id", http.StatusBadRequest)
+	ID := r.URL.Query().Get("id")
+	if ID == "" {
+		http.Error(w, "Missing query params: id", http.StatusBadRequest)
 		return
 	}
 
@@ -527,9 +518,9 @@ func deleteUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	query := "DELETE FROM music_notes WHERE user_provider = $1 AND user_provider_id = $2"
+	query := "DELETE FROM music_notes WHERE user_id = $1"
 
-	_, err = tx.Exec(query, provider, providerID)
+	_, err = tx.Exec(query, ID)
 	if err != nil {
 		tx.Rollback()
 		slog.Error("could not delete user", "error", err)
@@ -537,9 +528,9 @@ func deleteUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	query = "DELETE FROM reviews WHERE user_provider = $1 AND user_provider_id = $2"
+	query = "DELETE FROM list_elements WHERE user_id = $1"
 
-	_, err = tx.Exec(query, provider, providerID)
+	_, err = tx.Exec(query, ID)
 	if err != nil {
 		tx.Rollback()
 		slog.Error("could not delete user", "error", err)
@@ -547,9 +538,9 @@ func deleteUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	query = "DELETE FROM follower_relation WHERE (follower_provider = $1 AND follower_provider_id = $2) OR (followee_provider = $1 AND followee_provider_id = $2)"
+	query = "DELETE FROM lists WHERE user_id = $1"
 
-	_, err = tx.Exec(query, provider, providerID)
+	_, err = tx.Exec(query, ID)
 	if err != nil {
 		tx.Rollback()
 		slog.Error("could not delete user", "error", err)
@@ -557,9 +548,29 @@ func deleteUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	query = "DELETE FROM users WHERE provider = $1 AND provider_id = $2"
+	query = "DELETE FROM reviews WHERE user_id = $1"
 
-	_, err = tx.Exec(query, provider, providerID)
+	_, err = tx.Exec(query, ID)
+	if err != nil {
+		tx.Rollback()
+		slog.Error("could not delete user", "error", err)
+		http.Error(w, "Failed to delete user", http.StatusInternalServerError)
+		return
+	}
+
+	query = "DELETE FROM follower_relation WHERE follower_id = $1 OR followee_id = $1"
+
+	_, err = tx.Exec(query, ID)
+	if err != nil {
+		tx.Rollback()
+		slog.Error("could not delete user", "error", err)
+		http.Error(w, "Failed to delete user", http.StatusInternalServerError)
+		return
+	}
+
+	query = "DELETE FROM users WHERE id = $1"
+
+	_, err = tx.Exec(query, ID)
 	if err != nil {
 		tx.Rollback()
 		slog.Error("could not delete user", "error", err)
@@ -599,7 +610,7 @@ func searchUser(w http.ResponseWriter, r *http.Request) {
 	}
 	defer db.Close()
 
-	selectStatement := "SELECT provider, provider_id, name, image_src FROM users WHERE name ILIKE FORMAT('%s%%', $1::text)"
+	selectStatement := "SELECT id, name, image_src FROM users WHERE name ILIKE FORMAT('%s%%', $1::text)"
 	rows, err := db.Query(selectStatement, query)
 	if err != nil {
 		slog.Error("could not get user", "error", err)
@@ -611,7 +622,7 @@ func searchUser(w http.ResponseWriter, r *http.Request) {
 	var users = []UserCondensed{}
 	for rows.Next() {
 		var user UserCondensed
-		if err := rows.Scan(&user.Provider, &user.ProviderID, &user.Name, &user.ImageSource); err != nil {
+		if err := rows.Scan(&user.ID, &user.Name, &user.ImageSource); err != nil {
 			http.Error(w, "Failed to scan row", http.StatusInternalServerError)
 			return
 		}
@@ -632,10 +643,9 @@ func getActivity(w http.ResponseWriter, r *http.Request) {
 	if r.Method == "OPTIONS" {
 		return
 	}
-	provider := r.URL.Query().Get("provider")
-	providerID := r.URL.Query().Get("provider_id")
-	if provider == "" || providerID == "" {
-		http.Error(w, "Missing query params: provider and provider_id", http.StatusBadRequest)
+	ID := r.URL.Query().Get("id")
+	if ID == "" {
+		http.Error(w, "Missing query param: id", http.StatusBadRequest)
 		return
 	}
 
@@ -656,9 +666,9 @@ func getActivity(w http.ResponseWriter, r *http.Request) {
 	}
 	defer db.Close()
 
-	reviewQuery := "SELECT r.id, r.type, r.colour, r.image_src, r.title, r.subtitle, r.score, r.body, r.created_on, u.provider, u.provider_id, u.name, u.image_src FROM reviews r JOIN users u ON u.provider = r.user_provider AND u.provider_id = r.user_provider_id WHERE r.user_provider = $1 AND r.user_provider_id = $2 ORDER BY r.created_on DESC;"
+	reviewQuery := "SELECT r.id, r.entity_id, r.type, r.colour, r.image_src, r.title, r.subtitle, r.score, r.body, r.created_on, u.id, u.name, u.image_src FROM reviews r JOIN users u ON u.id = r.user_id WHERE r.user_id = $1 ORDER BY r.created_on DESC;"
 
-	reviewRows, err := db.Query(reviewQuery, provider, providerID)
+	reviewRows, err := db.Query(reviewQuery, ID)
 	if err != nil {
 		slog.Error("could not get timeline", "error", err)
 		http.Error(w, "Failed to get timeline", http.StatusInternalServerError)
@@ -668,10 +678,10 @@ func getActivity(w http.ResponseWriter, r *http.Request) {
 
 	response := []TimelineResponse{}
 	for reviewRows.Next() {
-		var author Author
+		var author UserCondensed
 		var timelineElement TimelineResponse
 		var reviewBag ReviewBag
-		if err := reviewRows.Scan(&reviewBag.ID, &reviewBag.Type, &reviewBag.Colour, &reviewBag.ImageSource, &reviewBag.Title, &reviewBag.Subtitle, &reviewBag.Score, &reviewBag.Body, &timelineElement.Timestamp, &author.Provider, &author.ProviderID, &author.Name, &author.Src); err != nil {
+		if err := reviewRows.Scan(&reviewBag.ID, &reviewBag.EntityID, &reviewBag.Type, &reviewBag.Colour, &reviewBag.ImageSource, &reviewBag.Title, &reviewBag.Subtitle, &reviewBag.Score, &reviewBag.Body, &timelineElement.Timestamp, &author.ID, &author.Name, &author.ImageSource); err != nil {
 			http.Error(w, "Failed to scan row", http.StatusInternalServerError)
 			return
 		}
@@ -683,9 +693,9 @@ func getActivity(w http.ResponseWriter, r *http.Request) {
 		response = append(response, timelineElement)
 	}
 
-	listQuery := "SELECT l.id, l.type, l.colour, l.title, l.created_on, u.provider, u.provider_id, u.name, u.image_src FROM lists l JOIN users u ON u.provider = l.user_provider AND u.provider_id = l.user_provider_id WHERE l.user_provider = $1 AND l.user_provider_id = $2 ORDER BY l.created_on DESC;"
+	listQuery := "SELECT l.id, l.type, l.colour, l.title, l.created_on, u.id, u.name, u.image_src FROM lists l JOIN users u ON u.id = l.user_id WHERE l.user_id = $1 ORDER BY l.created_on DESC;"
 
-	listRows, err := db.Query(listQuery, provider, providerID)
+	listRows, err := db.Query(listQuery, ID)
 	if err != nil {
 		slog.Error("could not get timeline", "error", err)
 		http.Error(w, "Failed to get timeline", http.StatusInternalServerError)
@@ -694,16 +704,16 @@ func getActivity(w http.ResponseWriter, r *http.Request) {
 	defer listRows.Close()
 
 	for listRows.Next() {
-		var author Author
+		var author UserCondensed
 		var timelineElement TimelineResponse
 		var listBag ListBag
-		if err := listRows.Scan(&listBag.ID, &listBag.Type, &listBag.Colour, &listBag.Title, &timelineElement.Timestamp, &author.Provider, &author.ProviderID, &author.Name, &author.Src); err != nil {
+		if err := listRows.Scan(&listBag.ID, &listBag.Type, &listBag.Colour, &listBag.Title, &timelineElement.Timestamp, &author.ID, &author.Name, &author.ImageSource); err != nil {
 			slog.Error("could not get timeline", "error", err)
 			http.Error(w, "Failed to scan row", http.StatusInternalServerError)
 			return
 		}
 
-		listElementQuery := "SELECT title, image_src FROM list_elements WHERE list_id = $1 ORDER BY placement ASC;"
+		listElementQuery := "SELECT entity_id, title, image_src FROM list_elements WHERE list_id = $1 ORDER BY placement ASC;"
 
 		listElementRows, err := db.Query(listElementQuery, listBag.ID)
 		if err != nil {
@@ -716,7 +726,7 @@ func getActivity(w http.ResponseWriter, r *http.Request) {
 		var listElements []ListElement
 		for listElementRows.Next() {
 			var listElement ListElement
-			if err := listElementRows.Scan(&listElement.Name, &listElement.ImageSrc); err != nil {
+			if err := listElementRows.Scan(&listElement.EntityID, &listElement.Name, &listElement.ImageSrc); err != nil {
 				slog.Error("could not get timeline", "error", err)
 				http.Error(w, "Failed to scan row", http.StatusInternalServerError)
 				return
@@ -750,10 +760,9 @@ func followUser(w http.ResponseWriter, r *http.Request) {
 	if r.Method == "OPTIONS" {
 		return
 	}
-	followerProvider := r.URL.Query().Get("provider")
-	followerProviderID := r.URL.Query().Get("provider_id")
-	if followerProvider == "" || followerProviderID == "" {
-		http.Error(w, "Missing query params: provider and provider_id", http.StatusBadRequest)
+	followerID := r.URL.Query().Get("id")
+	if followerID == "" {
+		http.Error(w, "Missing query param: id", http.StatusBadRequest)
 		return
 	}
 
@@ -777,7 +786,7 @@ func followUser(w http.ResponseWriter, r *http.Request) {
 	}
 	defer db.Close()
 
-	query := "INSERT INTO follower_relation (follower_provider, follower_provider_id, followee_provider, followee_provider_id) VALUES ($1, $2, $3, $4);"
+	query := "INSERT INTO follower_relation (follower_id, followee_id) VALUES ($1, $2);"
 
 	stmt, err := db.Prepare(query)
 	if err != nil {
@@ -787,7 +796,7 @@ func followUser(w http.ResponseWriter, r *http.Request) {
 	}
 	defer stmt.Close()
 
-	_, err = stmt.Exec(followerProvider, followerProviderID, followUserBody.Provider, followUserBody.ProviderID)
+	_, err = stmt.Exec(followerID, followUserBody.ID)
 	if err != nil {
 		slog.Error("failed to execute SQL statement", "error", err)
 		http.Error(w, "Failed to follow user", http.StatusInternalServerError)
@@ -803,10 +812,9 @@ func unfollowUser(w http.ResponseWriter, r *http.Request) {
 	if r.Method == "OPTIONS" {
 		return
 	}
-	unfollowerProvider := r.URL.Query().Get("provider")
-	unfollowerProviderID := r.URL.Query().Get("provider_id")
-	if unfollowerProvider == "" || unfollowerProviderID == "" {
-		http.Error(w, "Missing query params: provider and provider_id", http.StatusBadRequest)
+	unfollowerID := r.URL.Query().Get("id")
+	if unfollowerID == "" {
+		http.Error(w, "Missing query param: id", http.StatusBadRequest)
 		return
 	}
 
@@ -830,7 +838,7 @@ func unfollowUser(w http.ResponseWriter, r *http.Request) {
 	}
 	defer db.Close()
 
-	query := "DELETE FROM follower_relation WHERE follower_provider = $1 AND follower_provider_id = $2 AND followee_provider = $3 AND followee_provider_id = $4;"
+	query := "DELETE FROM follower_relation WHERE follower_id = $1 AND followee_id = $2;"
 
 	stmt, err := db.Prepare(query)
 	if err != nil {
@@ -840,7 +848,7 @@ func unfollowUser(w http.ResponseWriter, r *http.Request) {
 	}
 	defer stmt.Close()
 
-	_, err = stmt.Exec(unfollowerProvider, unfollowerProviderID, unfollowUserBody.Provider, unfollowUserBody.ProviderID)
+	_, err = stmt.Exec(unfollowerID, unfollowUserBody.ID)
 	if err != nil {
 		slog.Error("failed to execute SQL statement", "error", err)
 		http.Error(w, "Failed to follow user", http.StatusInternalServerError)
