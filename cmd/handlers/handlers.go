@@ -18,10 +18,16 @@ func RegisterHandlers() {
 	r.HandleFunc("/user", updateUser).Methods("PUT", "OPTIONS")
 	r.HandleFunc("/user", deleteUser).Methods("DELETE", "OPTIONS")
 
+	r.HandleFunc("/review/likes", getReviewLikes).Methods("GET", "OPTIONS")
 	r.HandleFunc("/review", addReview).Methods("POST", "OPTIONS")
+	r.HandleFunc("/review/like", likeReview).Methods("POST", "OPTIONS")
+	r.HandleFunc("/review/unlike", unlikeReview).Methods("POST", "OPTIONS")
 	r.HandleFunc("/review", deleteReview).Methods("DELETE", "OPTIONS")
 
+	r.HandleFunc("/list/likes", getListLikes).Methods("GET", "OPTIONS")
 	r.HandleFunc("/list", addList).Methods("POST", "OPTIONS")
+	r.HandleFunc("/list/like", likeList).Methods("POST", "OPTIONS")
+	r.HandleFunc("/list/unlike", unlikeList).Methods("POST", "OPTIONS")
 	r.HandleFunc("/list", deleteList).Methods("DELETE", "OPTIONS")
 
 	r.HandleFunc("/timeline", getTimeline).Methods("GET", "OPTIONS")

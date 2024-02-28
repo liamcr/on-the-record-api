@@ -25,6 +25,11 @@ type addListParams struct {
 	ListElements []ListElement `json:"listElements"`
 }
 
+type likeListParams struct {
+	UserID string `json:"userId"`
+	ListID string `json:"listId"`
+}
+
 type List struct {
 	UserID       string        `json:"userId"`
 	Type         int           `json:"type"`
@@ -215,4 +220,177 @@ func deleteList(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusNoContent)
 	w.Header().Set("Content-Type", "application/json")
+}
+
+func likeList(w http.ResponseWriter, r *http.Request) {
+	setupCORS(w, r)
+	if r.Method == "OPTIONS" {
+		return
+	}
+	var likeListBody likeListParams
+	decoder := json.NewDecoder(r.Body)
+	if err := decoder.Decode(&likeListBody); err != nil {
+		http.Error(w, "Failed to parse request body", http.StatusBadRequest)
+		return
+	}
+	defer func() {
+		if err := r.Body.Close(); err != nil {
+			slog.Error("failed to close request body", "error", err)
+		}
+	}()
+
+	db, err := connectToDB()
+	if err != nil {
+		slog.Error("could not connect to Postgres", "error", err)
+		http.Error(w, "Failed to connect to Postgres", http.StatusInternalServerError)
+		return
+	}
+	defer db.Close()
+
+	// Make sure user hasn't already liked this list
+	checkIfUserHasLikedQuery := "SELECT COUNT(*) FROM list_likes WHERE user_id = $1 AND list_id = $2"
+
+	var count int
+	err = db.QueryRow(checkIfUserHasLikedQuery, likeListBody.UserID, likeListBody.ListID).Scan(&count)
+	if err != nil {
+		slog.Error("failed to execute SQL statement", "error", err)
+		http.Error(w, "Failed to add user", http.StatusInternalServerError)
+		return
+	}
+	if count > 0 {
+		slog.Error("this user already has already liked this list", "User ID", likeListBody.UserID, "List ID", likeListBody.ListID)
+		http.Error(w, "this user already has already liked this list", http.StatusBadRequest)
+		return
+	}
+
+	query := "INSERT INTO list_likes (list_id, user_id) VALUES ($1, $2)"
+
+	stmt, err := db.Prepare(query)
+	if err != nil {
+		slog.Error("failed to prepare SQL statement", "error", err)
+		http.Error(w, "Failed to prepare SQL statement", http.StatusInternalServerError)
+		return
+	}
+
+	_, err = stmt.Exec(
+		likeListBody.ListID,
+		likeListBody.UserID,
+	)
+	if err != nil {
+		slog.Error("failed to execute SQL statement", "error", err)
+		http.Error(w, "Failed to like list", http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+	w.Header().Set("Content-Type", "application/json")
+}
+
+func unlikeList(w http.ResponseWriter, r *http.Request) {
+	setupCORS(w, r)
+	if r.Method == "OPTIONS" {
+		return
+	}
+	var likeListBody likeListParams
+	decoder := json.NewDecoder(r.Body)
+	if err := decoder.Decode(&likeListBody); err != nil {
+		http.Error(w, "Failed to parse request body", http.StatusBadRequest)
+		return
+	}
+	defer func() {
+		if err := r.Body.Close(); err != nil {
+			slog.Error("failed to close request body", "error", err)
+		}
+	}()
+
+	db, err := connectToDB()
+	if err != nil {
+		slog.Error("could not connect to Postgres", "error", err)
+		http.Error(w, "Failed to connect to Postgres", http.StatusInternalServerError)
+		return
+	}
+	defer db.Close()
+
+	// Make sure user hasn't already liked this list
+	checkIfUserHasLikedQuery := "SELECT COUNT(*) FROM list_likes WHERE user_id = $1 AND list_id = $2"
+
+	var count int
+	err = db.QueryRow(checkIfUserHasLikedQuery, likeListBody.UserID, likeListBody.ListID).Scan(&count)
+	if err != nil {
+		slog.Error("failed to execute SQL statement", "error", err)
+		http.Error(w, "Failed to add user", http.StatusInternalServerError)
+		return
+	}
+	if count == 0 {
+		slog.Error("this user already has not liked this list", "User ID", likeListBody.UserID, "List ID", likeListBody.ListID)
+		http.Error(w, "this user already has not liked this list", http.StatusBadRequest)
+		return
+	}
+
+	query := "DELETE FROM list_likes WHERE list_id = $1 AND user_id = $2;"
+
+	stmt, err := db.Prepare(query)
+	if err != nil {
+		slog.Error("failed to prepare SQL statement", "error", err)
+		http.Error(w, "Failed to prepare SQL statement", http.StatusInternalServerError)
+		return
+	}
+
+	_, err = stmt.Exec(
+		likeListBody.ListID,
+		likeListBody.UserID,
+	)
+	if err != nil {
+		slog.Error("failed to execute SQL statement", "error", err)
+		http.Error(w, "Failed to like list", http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+	w.Header().Set("Content-Type", "application/json")
+}
+
+func getListLikes(w http.ResponseWriter, r *http.Request) {
+	setupCORS(w, r)
+	if r.Method == "OPTIONS" {
+		return
+	}
+	ID := r.URL.Query().Get("id")
+	if ID == "" {
+		http.Error(w, "Missing query param: id", http.StatusBadRequest)
+		return
+	}
+
+	db, err := connectToDB()
+	if err != nil {
+		slog.Error("could not connect to Postgres", "error", err)
+		http.Error(w, "Failed to connect to Postgres", http.StatusInternalServerError)
+		return
+	}
+	defer db.Close()
+
+	query := "SELECT u.id, u.name, u.image_src FROM list_likes l JOIN users u ON l.user_id = u.id WHERE l.list_id = $1"
+
+	likeRows, err := db.Query(query, ID)
+	if err != nil {
+		slog.Error("could not get likes", "error", err)
+		http.Error(w, "Failed to get likes", http.StatusInternalServerError)
+		return
+	}
+	defer likeRows.Close()
+
+	usersThatLiked := []UserCondensed{}
+	for likeRows.Next() {
+		var user UserCondensed
+		if err := likeRows.Scan(&user.ID, &user.Name, &user.ImageSource); err != nil {
+			slog.Error("failed to scan row", "error", err)
+			http.Error(w, "Could not get likes", http.StatusInternalServerError)
+			return
+		}
+		usersThatLiked = append(usersThatLiked, user)
+	}
+
+	w.WriteHeader(http.StatusOK)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(usersThatLiked)
 }

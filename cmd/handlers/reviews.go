@@ -21,6 +21,11 @@ type addReviewParams struct {
 	Body        string `json:"body"`
 }
 
+type likeReviewParams struct {
+	UserID   string `json:"userId"`
+	ReviewID int    `json:"reviewId"`
+}
+
 type Review struct {
 	UserID      string    `json:"userId"`
 	EntityID    string    `json:"entityId"`
@@ -90,7 +95,7 @@ func addReview(w http.ResponseWriter, r *http.Request) {
 	)
 	if err != nil {
 		slog.Error("failed to execute SQL statement", "error", err)
-		http.Error(w, "Failed to add user", http.StatusInternalServerError)
+		http.Error(w, "Failed to add review", http.StatusInternalServerError)
 		return
 	}
 
@@ -147,4 +152,177 @@ func deleteReview(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusNoContent)
 	w.Header().Set("Content-Type", "application/json")
+}
+
+func likeReview(w http.ResponseWriter, r *http.Request) {
+	setupCORS(w, r)
+	if r.Method == "OPTIONS" {
+		return
+	}
+	var likeReviewBody likeReviewParams
+	decoder := json.NewDecoder(r.Body)
+	if err := decoder.Decode(&likeReviewBody); err != nil {
+		http.Error(w, "Failed to parse request body", http.StatusBadRequest)
+		return
+	}
+	defer func() {
+		if err := r.Body.Close(); err != nil {
+			slog.Error("failed to close request body", "error", err)
+		}
+	}()
+
+	db, err := connectToDB()
+	if err != nil {
+		slog.Error("could not connect to Postgres", "error", err)
+		http.Error(w, "Failed to connect to Postgres", http.StatusInternalServerError)
+		return
+	}
+	defer db.Close()
+
+	// Make sure user hasn't already liked this review
+	checkIfUserHasLikedQuery := "SELECT COUNT(*) FROM review_likes WHERE user_id = $1 AND review_id = $2"
+
+	var count int
+	err = db.QueryRow(checkIfUserHasLikedQuery, likeReviewBody.UserID, likeReviewBody.ReviewID).Scan(&count)
+	if err != nil {
+		slog.Error("failed to execute SQL statement", "error", err)
+		http.Error(w, "Failed to add user", http.StatusInternalServerError)
+		return
+	}
+	if count > 0 {
+		slog.Error("this user already has already liked this review", "User ID", likeReviewBody.UserID, "Review ID", likeReviewBody.ReviewID)
+		http.Error(w, "this user already has already liked this review", http.StatusBadRequest)
+		return
+	}
+
+	query := "INSERT INTO review_likes (review_id, user_id) VALUES ($1, $2)"
+
+	stmt, err := db.Prepare(query)
+	if err != nil {
+		slog.Error("failed to prepare SQL statement", "error", err)
+		http.Error(w, "Failed to prepare SQL statement", http.StatusInternalServerError)
+		return
+	}
+
+	_, err = stmt.Exec(
+		likeReviewBody.ReviewID,
+		likeReviewBody.UserID,
+	)
+	if err != nil {
+		slog.Error("failed to execute SQL statement", "error", err)
+		http.Error(w, "Failed to like review", http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+	w.Header().Set("Content-Type", "application/json")
+}
+
+func unlikeReview(w http.ResponseWriter, r *http.Request) {
+	setupCORS(w, r)
+	if r.Method == "OPTIONS" {
+		return
+	}
+	var likeReviewBody likeReviewParams
+	decoder := json.NewDecoder(r.Body)
+	if err := decoder.Decode(&likeReviewBody); err != nil {
+		http.Error(w, "Failed to parse request body", http.StatusBadRequest)
+		return
+	}
+	defer func() {
+		if err := r.Body.Close(); err != nil {
+			slog.Error("failed to close request body", "error", err)
+		}
+	}()
+
+	db, err := connectToDB()
+	if err != nil {
+		slog.Error("could not connect to Postgres", "error", err)
+		http.Error(w, "Failed to connect to Postgres", http.StatusInternalServerError)
+		return
+	}
+	defer db.Close()
+
+	// Make sure user hasn't already liked this review
+	checkIfUserHasLikedQuery := "SELECT COUNT(*) FROM review_likes WHERE user_id = $1 AND review_id = $2"
+
+	var count int
+	err = db.QueryRow(checkIfUserHasLikedQuery, likeReviewBody.UserID, likeReviewBody.ReviewID).Scan(&count)
+	if err != nil {
+		slog.Error("failed to execute SQL statement", "error", err)
+		http.Error(w, "Failed to add user", http.StatusInternalServerError)
+		return
+	}
+	if count == 0 {
+		slog.Error("this user already has not liked this review", "User ID", likeReviewBody.UserID, "Review ID", likeReviewBody.ReviewID)
+		http.Error(w, "this user already has not liked this review", http.StatusBadRequest)
+		return
+	}
+
+	query := "DELETE FROM review_likes WHERE review_id = $1 AND user_id = $2;"
+
+	stmt, err := db.Prepare(query)
+	if err != nil {
+		slog.Error("failed to prepare SQL statement", "error", err)
+		http.Error(w, "Failed to prepare SQL statement", http.StatusInternalServerError)
+		return
+	}
+
+	_, err = stmt.Exec(
+		likeReviewBody.ReviewID,
+		likeReviewBody.UserID,
+	)
+	if err != nil {
+		slog.Error("failed to execute SQL statement", "error", err)
+		http.Error(w, "Failed to like review", http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+	w.Header().Set("Content-Type", "application/json")
+}
+
+func getReviewLikes(w http.ResponseWriter, r *http.Request) {
+	setupCORS(w, r)
+	if r.Method == "OPTIONS" {
+		return
+	}
+	ID := r.URL.Query().Get("id")
+	if ID == "" {
+		http.Error(w, "Missing query param: id", http.StatusBadRequest)
+		return
+	}
+
+	db, err := connectToDB()
+	if err != nil {
+		slog.Error("could not connect to Postgres", "error", err)
+		http.Error(w, "Failed to connect to Postgres", http.StatusInternalServerError)
+		return
+	}
+	defer db.Close()
+
+	query := "SELECT u.id, u.name, u.image_src FROM review_likes l JOIN users u ON l.user_id = u.id WHERE l.review_id = $1"
+
+	likeRows, err := db.Query(query, ID)
+	if err != nil {
+		slog.Error("could not get likes", "error", err)
+		http.Error(w, "Failed to get likes", http.StatusInternalServerError)
+		return
+	}
+	defer likeRows.Close()
+
+	usersThatLiked := []UserCondensed{}
+	for likeRows.Next() {
+		var user UserCondensed
+		if err := likeRows.Scan(&user.ID, &user.Name, &user.ImageSource); err != nil {
+			slog.Error("failed to scan row", "error", err)
+			http.Error(w, "Could not get likes", http.StatusInternalServerError)
+			return
+		}
+		usersThatLiked = append(usersThatLiked, user)
+	}
+
+	w.WriteHeader(http.StatusOK)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(usersThatLiked)
 }
