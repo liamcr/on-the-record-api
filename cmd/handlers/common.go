@@ -15,7 +15,7 @@ func connectToDB() (*sql.DB, error) {
 	return sql.Open("postgres", connStr)
 }
 
-func setupCORS(w http.ResponseWriter, req *http.Request) {
+func setupCORS(w http.ResponseWriter, _ *http.Request) {
 	//Allow CORS here By * or specific origin
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 

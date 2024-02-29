@@ -144,12 +144,6 @@ func deleteReview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err != nil {
-		slog.Error("failed to commit transaction", "error", err)
-		http.Error(w, "Failed to add review", http.StatusInternalServerError)
-		return
-	}
-
 	w.WriteHeader(http.StatusNoContent)
 	w.Header().Set("Content-Type", "application/json")
 }

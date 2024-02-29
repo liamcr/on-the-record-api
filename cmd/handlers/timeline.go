@@ -40,6 +40,8 @@ type TimelineResponse struct {
 	Type      int           `json:"type"`
 	Timestamp time.Time     `json:"timestamp"`
 	Data      interface{}   `json:"data"`
+	NumLikes  int           `json:"numLikes"`
+	IsLiked   bool          `json:"isLiked"`
 }
 
 func getTimeline(w http.ResponseWriter, r *http.Request) {
@@ -179,7 +181,63 @@ func getTimeline(w http.ResponseWriter, r *http.Request) {
 	start := min(len(response), offset)
 	end := min(len(response), offset+limit)
 
+	response = response[start:end]
+
+	for i, post := range response {
+		var entityIdentifier string
+		var tableName string
+		var entityID any
+		if post.Type == ReviewType {
+			entityIdentifier = "review_id"
+			tableName = "review_likes"
+
+			reviewBag, ok := post.Data.(ReviewBag)
+			if !ok {
+				slog.Error("could not get timeline")
+				http.Error(w, "Failed to get timeline", http.StatusInternalServerError)
+				return
+			}
+
+			entityID = reviewBag.ID
+		} else if post.Type == ListType {
+			entityIdentifier = "list_id"
+			tableName = "list_likes"
+
+			listBag, ok := post.Data.(ListBag)
+			if !ok {
+				slog.Error("could not get timeline")
+				http.Error(w, "Failed to get timeline", http.StatusInternalServerError)
+				return
+			}
+
+			entityID = listBag.ID
+		}
+
+		likeCountQuery := fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE %s = $1", tableName, entityIdentifier)
+
+		var numLikes int
+		err = db.QueryRow(likeCountQuery, entityID).Scan(&numLikes)
+		if err != nil {
+			slog.Error("failed to execute SQL statement", "error", err)
+			http.Error(w, "Failed to add user", http.StatusInternalServerError)
+			return
+		}
+
+		isLikedQuery := likeCountQuery + " AND user_id = $2"
+
+		var isLiked int
+		err = db.QueryRow(isLikedQuery, entityID, ID).Scan(&isLiked)
+		if err != nil {
+			slog.Error("failed to execute SQL statement", "error", err)
+			http.Error(w, "Failed to add user", http.StatusInternalServerError)
+			return
+		}
+
+		response[i].NumLikes = numLikes
+		response[i].IsLiked = isLiked > 0
+	}
+
 	w.WriteHeader(http.StatusOK)
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response[start:end])
+	json.NewEncoder(w).Encode(response)
 }
