@@ -135,6 +135,31 @@ func deleteReview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	token := r.Header["Authorization"][0][len("Bearer: "):]
+	currentUserID, err := extractUserIDFromJWTPayload(token)
+	if err != nil {
+		http.Error(w, "Malformed authentication token", http.StatusUnauthorized)
+	}
+
+	getReviewUserQuery := "SELECT user_id FROM reviews WHERE id = $1"
+
+	var reviewUserID string
+	err = db.QueryRow(getReviewUserQuery, id).Scan(&reviewUserID)
+	if err != nil {
+		slog.Error("failed to execute SQL statement", "error", err)
+		http.Error(w, "Failed to add user", http.StatusInternalServerError)
+		return
+	}
+	if currentUserID != reviewUserID {
+		slog.Error(
+			"user does not have permission to delete this review", 
+			"requestingId", currentUserID, 
+			"reviewUserId", reviewUserID,
+		)
+		http.Error(w, "user cannot delete someone else's review", http.StatusForbidden)
+		return
+	}
+
 	query := "DELETE FROM reviews WHERE id = $1;"
 
 	_, err = db.Exec(query, id)

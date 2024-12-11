@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"net/http"
+	"on-the-record-api/cmd/middleware"
 
 	"github.com/gorilla/mux"
 )
@@ -22,7 +23,10 @@ func RegisterHandlers() {
 	r.HandleFunc("/review", addReview).Methods("POST", "OPTIONS")
 	r.HandleFunc("/review/like", likeReview).Methods("POST", "OPTIONS")
 	r.HandleFunc("/review/unlike", unlikeReview).Methods("POST", "OPTIONS")
-	r.HandleFunc("/review", deleteReview).Methods("DELETE", "OPTIONS")
+	r.HandleFunc(
+		"/review", 
+		middleware.EnsureValidToken()(http.HandlerFunc(deleteReview)).ServeHTTP,
+	).Methods("DELETE", "OPTIONS")
 
 	r.HandleFunc("/list/likes", getListLikes).Methods("GET", "OPTIONS")
 	r.HandleFunc("/list", addList).Methods("POST", "OPTIONS")
