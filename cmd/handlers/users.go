@@ -14,6 +14,13 @@ import (
 )
 
 type addUserParams struct {
+	Name        string      `json:"name"`
+	ImageSource string      `json:"imageSrc"`
+	Colour      string      `json:"colour"`
+	MusicNotes  []MusicNote `json:"musicNotes"`
+}
+
+type updateUserParams struct {
 	ID          string      `json:"id"`
 	Name        string      `json:"name"`
 	ImageSource string      `json:"imageSrc"`
@@ -286,6 +293,12 @@ func addUser(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
+	token := r.Header["Authorization"][0][len("Bearer: "):]
+	newUserID, err := extractUserIDFromJWTPayload(token)
+	if err != nil {
+		http.Error(w, "Malformed authentication token", http.StatusUnauthorized)
+	}
+
 	db, err := connectToDB()
 	if err != nil {
 		slog.Error("could not connect to Postgres", "error", err)
@@ -298,14 +311,14 @@ func addUser(w http.ResponseWriter, r *http.Request) {
 	checkIfUserExistsQuery := "SELECT COUNT(*) FROM users WHERE id = $1"
 
 	var count int
-	err = db.QueryRow(checkIfUserExistsQuery, addUserBody.ID).Scan(&count)
+	err = db.QueryRow(checkIfUserExistsQuery, newUserID).Scan(&count)
 	if err != nil {
 		slog.Error("failed to execute SQL statement", "error", err)
 		http.Error(w, "Failed to add user", http.StatusInternalServerError)
 		return
 	}
 	if count > 0 {
-		slog.Error("this user already has an account", "id", addUserBody.ID)
+		slog.Error("this user already has an account", "id", newUserID)
 		http.Error(w, "this user already has an account", http.StatusBadRequest)
 		return
 	}
@@ -330,7 +343,7 @@ func addUser(w http.ResponseWriter, r *http.Request) {
 	defer stmt.Close()
 
 	createdOn := time.Now()
-	_, err = stmt.Exec(addUserBody.ID, addUserBody.Name, addUserBody.Colour, addUserBody.ImageSource, createdOn)
+	_, err = stmt.Exec(newUserID, addUserBody.Name, addUserBody.Colour, addUserBody.ImageSource, createdOn)
 	if err != nil {
 		tx.Rollback()
 		slog.Error("failed to execute SQL statement", "error", err)
@@ -349,7 +362,7 @@ func addUser(w http.ResponseWriter, r *http.Request) {
 		}
 		defer stmt.Close()
 
-		_, err = stmt.Exec(addUserBody.ID, musicNote.EntityID, musicNote.Prompt, musicNote.ImageSource, musicNote.Title, musicNote.Subtitle)
+		_, err = stmt.Exec(newUserID, musicNote.EntityID, musicNote.Prompt, musicNote.ImageSource, musicNote.Title, musicNote.Subtitle)
 		if err != nil {
 			tx.Rollback()
 			slog.Error("failed to execute SQL statement", "error", err)
@@ -367,7 +380,7 @@ func addUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	resp := User{
-		ID:          addUserBody.ID,
+		ID:          newUserID,
 		Name:        addUserBody.Name,
 		ImageSource: addUserBody.ImageSource,
 		Colour:      addUserBody.Colour,
@@ -385,7 +398,7 @@ func updateUser(w http.ResponseWriter, r *http.Request) {
 	if r.Method == "OPTIONS" {
 		return
 	}
-	var updateUserBody addUserParams
+	var updateUserBody updateUserParams
 	decoder := json.NewDecoder(r.Body)
 	if err := decoder.Decode(&updateUserBody); err != nil {
 		http.Error(w, "Failed to parse request body", http.StatusBadRequest)
@@ -478,7 +491,7 @@ func updateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp := addUserParams{
+	resp := updateUserParams{
 		ID:          updateUserBody.ID,
 		Name:        updateUserBody.Name,
 		ImageSource: updateUserBody.ImageSource,

@@ -13,7 +13,10 @@ func RegisterHandlers() {
 	r.HandleFunc("/user/featured", getFeaturedUsers).Methods("GET", "OPTIONS")
 	r.HandleFunc("/user/search", searchUser).Methods("GET", "OPTIONS")
 	r.HandleFunc("/user/activity", getActivity).Methods("GET", "OPTIONS")
-	r.HandleFunc("/user", addUser).Methods("POST", "OPTIONS")
+	r.HandleFunc(
+		"/user",
+		middleware.EnsureValidToken()(http.HandlerFunc(addUser)).ServeHTTP,
+	).Methods("POST", "OPTIONS")
 	r.HandleFunc("/user/follow", followUser).Methods("POST", "OPTIONS")
 	r.HandleFunc("/user/unfollow", unfollowUser).Methods("POST", "OPTIONS")
 	r.HandleFunc("/user", updateUser).Methods("PUT", "OPTIONS")
@@ -24,7 +27,7 @@ func RegisterHandlers() {
 	r.HandleFunc("/review/like", likeReview).Methods("POST", "OPTIONS")
 	r.HandleFunc("/review/unlike", unlikeReview).Methods("POST", "OPTIONS")
 	r.HandleFunc(
-		"/review", 
+		"/review",
 		middleware.EnsureValidToken()(http.HandlerFunc(deleteReview)).ServeHTTP,
 	).Methods("DELETE", "OPTIONS")
 
