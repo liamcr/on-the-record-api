@@ -139,6 +139,7 @@ func deleteReview(w http.ResponseWriter, r *http.Request) {
 	currentUserID, err := extractUserIDFromJWTPayload(token)
 	if err != nil {
 		http.Error(w, "Malformed authentication token", http.StatusUnauthorized)
+		return
 	}
 
 	getReviewUserQuery := "SELECT user_id FROM reviews WHERE id = $1"
@@ -152,8 +153,8 @@ func deleteReview(w http.ResponseWriter, r *http.Request) {
 	}
 	if currentUserID != reviewUserID {
 		slog.Error(
-			"user does not have permission to delete this review", 
-			"requestingId", currentUserID, 
+			"user does not have permission to delete this review",
+			"requestingId", currentUserID,
 			"reviewUserId", reviewUserID,
 		)
 		http.Error(w, "user cannot delete someone else's review", http.StatusForbidden)

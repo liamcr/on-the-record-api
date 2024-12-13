@@ -297,6 +297,7 @@ func addUser(w http.ResponseWriter, r *http.Request) {
 	newUserID, err := extractUserIDFromJWTPayload(token)
 	if err != nil {
 		http.Error(w, "Malformed authentication token", http.StatusUnauthorized)
+		return
 	}
 
 	db, err := connectToDB()
@@ -520,6 +521,16 @@ func deleteUser(w http.ResponseWriter, r *http.Request) {
 	ID := r.URL.Query().Get("id")
 	if ID == "" {
 		http.Error(w, "Missing query params: id", http.StatusBadRequest)
+		return
+	}
+	token := r.Header["Authorization"][0][len("Bearer: "):]
+	currentUserID, err := extractUserIDFromJWTPayload(token)
+	if err != nil {
+		http.Error(w, "Malformed authentication token", http.StatusUnauthorized)
+		return
+	}
+	if currentUserID != ID {
+		http.Error(w, "Can only delete your own user", http.StatusForbidden)
 		return
 	}
 
