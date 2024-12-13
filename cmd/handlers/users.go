@@ -411,6 +411,17 @@ func updateUser(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
+	token := r.Header["Authorization"][0][len("Bearer: "):]
+	currentUserID, err := extractUserIDFromJWTPayload(token)
+	if err != nil {
+		http.Error(w, "Malformed authentication token", http.StatusUnauthorized)
+		return
+	}
+	if currentUserID != updateUserBody.ID {
+		http.Error(w, "Can only update your own user", http.StatusForbidden)
+		return
+	}
+
 	db, err := connectToDB()
 	if err != nil {
 		slog.Error("could not connect to Postgres", "error", err)
@@ -523,6 +534,7 @@ func deleteUser(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Missing query params: id", http.StatusBadRequest)
 		return
 	}
+
 	token := r.Header["Authorization"][0][len("Bearer: "):]
 	currentUserID, err := extractUserIDFromJWTPayload(token)
 	if err != nil {
