@@ -21,8 +21,7 @@ type addReviewParams struct {
 }
 
 type likeReviewParams struct {
-	UserID   string `json:"userId"`
-	ReviewID int    `json:"reviewId"`
+	ReviewID int `json:"reviewId"`
 }
 
 type Review struct {
@@ -186,6 +185,14 @@ func likeReview(w http.ResponseWriter, r *http.Request) {
 	if r.Method == "OPTIONS" {
 		return
 	}
+
+	token := r.Header["Authorization"][0][len("Bearer: "):]
+	userID, err := extractUserIDFromJWTPayload(token)
+	if err != nil {
+		http.Error(w, "Malformed authentication token", http.StatusUnauthorized)
+		return
+	}
+
 	var likeReviewBody likeReviewParams
 	decoder := json.NewDecoder(r.Body)
 	if err := decoder.Decode(&likeReviewBody); err != nil {
@@ -210,14 +217,14 @@ func likeReview(w http.ResponseWriter, r *http.Request) {
 	checkIfUserHasLikedQuery := "SELECT COUNT(*) FROM review_likes WHERE user_id = $1 AND review_id = $2"
 
 	var count int
-	err = db.QueryRow(checkIfUserHasLikedQuery, likeReviewBody.UserID, likeReviewBody.ReviewID).Scan(&count)
+	err = db.QueryRow(checkIfUserHasLikedQuery, userID, likeReviewBody.ReviewID).Scan(&count)
 	if err != nil {
 		slog.Error("failed to execute SQL statement", "error", err)
 		http.Error(w, "Failed to add user", http.StatusInternalServerError)
 		return
 	}
 	if count > 0 {
-		slog.Error("this user already has already liked this review", "User ID", likeReviewBody.UserID, "Review ID", likeReviewBody.ReviewID)
+		slog.Error("this user already has already liked this review", "User ID", userID, "Review ID", likeReviewBody.ReviewID)
 		http.Error(w, "this user already has already liked this review", http.StatusBadRequest)
 		return
 	}
@@ -233,7 +240,7 @@ func likeReview(w http.ResponseWriter, r *http.Request) {
 
 	_, err = stmt.Exec(
 		likeReviewBody.ReviewID,
-		likeReviewBody.UserID,
+		userID,
 	)
 	if err != nil {
 		slog.Error("failed to execute SQL statement", "error", err)
@@ -250,6 +257,14 @@ func unlikeReview(w http.ResponseWriter, r *http.Request) {
 	if r.Method == "OPTIONS" {
 		return
 	}
+
+	token := r.Header["Authorization"][0][len("Bearer: "):]
+	userID, err := extractUserIDFromJWTPayload(token)
+	if err != nil {
+		http.Error(w, "Malformed authentication token", http.StatusUnauthorized)
+		return
+	}
+
 	var likeReviewBody likeReviewParams
 	decoder := json.NewDecoder(r.Body)
 	if err := decoder.Decode(&likeReviewBody); err != nil {
@@ -274,14 +289,14 @@ func unlikeReview(w http.ResponseWriter, r *http.Request) {
 	checkIfUserHasLikedQuery := "SELECT COUNT(*) FROM review_likes WHERE user_id = $1 AND review_id = $2"
 
 	var count int
-	err = db.QueryRow(checkIfUserHasLikedQuery, likeReviewBody.UserID, likeReviewBody.ReviewID).Scan(&count)
+	err = db.QueryRow(checkIfUserHasLikedQuery, userID, likeReviewBody.ReviewID).Scan(&count)
 	if err != nil {
 		slog.Error("failed to execute SQL statement", "error", err)
 		http.Error(w, "Failed to add user", http.StatusInternalServerError)
 		return
 	}
 	if count == 0 {
-		slog.Error("this user already has not liked this review", "User ID", likeReviewBody.UserID, "Review ID", likeReviewBody.ReviewID)
+		slog.Error("this user has not liked this review", "User ID", userID, "Review ID", likeReviewBody.ReviewID)
 		http.Error(w, "this user already has not liked this review", http.StatusBadRequest)
 		return
 	}
@@ -297,7 +312,7 @@ func unlikeReview(w http.ResponseWriter, r *http.Request) {
 
 	_, err = stmt.Exec(
 		likeReviewBody.ReviewID,
-		likeReviewBody.UserID,
+		userID,
 	)
 	if err != nil {
 		slog.Error("failed to execute SQL statement", "error", err)

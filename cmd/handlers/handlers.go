@@ -39,8 +39,14 @@ func RegisterHandlers() {
 		"/review",
 		middleware.EnsureValidToken()(http.HandlerFunc(addReview)).ServeHTTP,
 	).Methods("POST", "OPTIONS")
-	r.HandleFunc("/review/like", likeReview).Methods("POST", "OPTIONS")
-	r.HandleFunc("/review/unlike", unlikeReview).Methods("POST", "OPTIONS")
+	r.HandleFunc(
+		"/review/like",
+		middleware.EnsureValidToken()(http.HandlerFunc(likeReview)).ServeHTTP,
+	).Methods("POST", "OPTIONS")
+	r.HandleFunc(
+		"/review/unlike",
+		middleware.EnsureValidToken()(http.HandlerFunc(unlikeReview)).ServeHTTP,
+	).Methods("POST", "OPTIONS")
 	r.HandleFunc(
 		"/review",
 		middleware.EnsureValidToken()(http.HandlerFunc(deleteReview)).ServeHTTP,
@@ -51,8 +57,14 @@ func RegisterHandlers() {
 		"/list",
 		middleware.EnsureValidToken()(http.HandlerFunc(addList)).ServeHTTP,
 	).Methods("POST", "OPTIONS")
-	r.HandleFunc("/list/like", likeList).Methods("POST", "OPTIONS")
-	r.HandleFunc("/list/unlike", unlikeList).Methods("POST", "OPTIONS")
+	r.HandleFunc(
+		"/list/like",
+		middleware.EnsureValidToken()(http.HandlerFunc(likeList)).ServeHTTP,
+	).Methods("POST", "OPTIONS")
+	r.HandleFunc(
+		"/list/unlike",
+		middleware.EnsureValidToken()(http.HandlerFunc(unlikeList)).ServeHTTP,
+	).Methods("POST", "OPTIONS")
 	r.HandleFunc(
 		"/list",
 		middleware.EnsureValidToken()(http.HandlerFunc(deleteList)).ServeHTTP,

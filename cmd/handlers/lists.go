@@ -25,7 +25,6 @@ type addListParams struct {
 }
 
 type likeListParams struct {
-	UserID string `json:"userId"`
 	ListID string `json:"listId"`
 }
 
@@ -260,6 +259,14 @@ func likeList(w http.ResponseWriter, r *http.Request) {
 	if r.Method == "OPTIONS" {
 		return
 	}
+
+	token := r.Header["Authorization"][0][len("Bearer: "):]
+	userID, err := extractUserIDFromJWTPayload(token)
+	if err != nil {
+		http.Error(w, "Malformed authentication token", http.StatusUnauthorized)
+		return
+	}
+
 	var likeListBody likeListParams
 	decoder := json.NewDecoder(r.Body)
 	if err := decoder.Decode(&likeListBody); err != nil {
@@ -284,14 +291,14 @@ func likeList(w http.ResponseWriter, r *http.Request) {
 	checkIfUserHasLikedQuery := "SELECT COUNT(*) FROM list_likes WHERE user_id = $1 AND list_id = $2"
 
 	var count int
-	err = db.QueryRow(checkIfUserHasLikedQuery, likeListBody.UserID, likeListBody.ListID).Scan(&count)
+	err = db.QueryRow(checkIfUserHasLikedQuery, userID, likeListBody.ListID).Scan(&count)
 	if err != nil {
 		slog.Error("failed to execute SQL statement", "error", err)
 		http.Error(w, "Failed to add user", http.StatusInternalServerError)
 		return
 	}
 	if count > 0 {
-		slog.Error("this user already has already liked this list", "User ID", likeListBody.UserID, "List ID", likeListBody.ListID)
+		slog.Error("this user already has already liked this list", "User ID", userID, "List ID", likeListBody.ListID)
 		http.Error(w, "this user already has already liked this list", http.StatusBadRequest)
 		return
 	}
@@ -307,7 +314,7 @@ func likeList(w http.ResponseWriter, r *http.Request) {
 
 	_, err = stmt.Exec(
 		likeListBody.ListID,
-		likeListBody.UserID,
+		userID,
 	)
 	if err != nil {
 		slog.Error("failed to execute SQL statement", "error", err)
@@ -324,6 +331,14 @@ func unlikeList(w http.ResponseWriter, r *http.Request) {
 	if r.Method == "OPTIONS" {
 		return
 	}
+
+	token := r.Header["Authorization"][0][len("Bearer: "):]
+	userID, err := extractUserIDFromJWTPayload(token)
+	if err != nil {
+		http.Error(w, "Malformed authentication token", http.StatusUnauthorized)
+		return
+	}
+
 	var likeListBody likeListParams
 	decoder := json.NewDecoder(r.Body)
 	if err := decoder.Decode(&likeListBody); err != nil {
@@ -348,14 +363,14 @@ func unlikeList(w http.ResponseWriter, r *http.Request) {
 	checkIfUserHasLikedQuery := "SELECT COUNT(*) FROM list_likes WHERE user_id = $1 AND list_id = $2"
 
 	var count int
-	err = db.QueryRow(checkIfUserHasLikedQuery, likeListBody.UserID, likeListBody.ListID).Scan(&count)
+	err = db.QueryRow(checkIfUserHasLikedQuery, userID, likeListBody.ListID).Scan(&count)
 	if err != nil {
 		slog.Error("failed to execute SQL statement", "error", err)
 		http.Error(w, "Failed to add user", http.StatusInternalServerError)
 		return
 	}
 	if count == 0 {
-		slog.Error("this user already has not liked this list", "User ID", likeListBody.UserID, "List ID", likeListBody.ListID)
+		slog.Error("this user has not liked this list", "User ID", userID, "List ID", likeListBody.ListID)
 		http.Error(w, "this user already has not liked this list", http.StatusBadRequest)
 		return
 	}
@@ -371,7 +386,7 @@ func unlikeList(w http.ResponseWriter, r *http.Request) {
 
 	_, err = stmt.Exec(
 		likeListBody.ListID,
-		likeListBody.UserID,
+		userID,
 	)
 	if err != nil {
 		slog.Error("failed to execute SQL statement", "error", err)
