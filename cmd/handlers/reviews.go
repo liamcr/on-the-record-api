@@ -11,7 +11,6 @@ import (
 )
 
 type addReviewParams struct {
-	UserID      string `json:"userId"`
 	EntityID    string `json:"entityId"`
 	Type        int    `json:"type"`
 	Title       string `json:"title"`
@@ -44,6 +43,14 @@ func addReview(w http.ResponseWriter, r *http.Request) {
 	if r.Method == "OPTIONS" {
 		return
 	}
+
+	token := r.Header["Authorization"][0][len("Bearer: "):]
+	userID, err := extractUserIDFromJWTPayload(token)
+	if err != nil {
+		http.Error(w, "Malformed authentication token", http.StatusUnauthorized)
+		return
+	}
+
 	var addReviewBody addReviewParams
 	decoder := json.NewDecoder(r.Body)
 	if err := decoder.Decode(&addReviewBody); err != nil {
@@ -82,7 +89,7 @@ func addReview(w http.ResponseWriter, r *http.Request) {
 
 	createdOn := time.Now().UTC()
 	_, err = stmt.Exec(
-		addReviewBody.UserID,
+		userID,
 		addReviewBody.EntityID,
 		addReviewBody.Type,
 		addReviewBody.Title,
@@ -100,7 +107,7 @@ func addReview(w http.ResponseWriter, r *http.Request) {
 	}
 
 	resp := Review{
-		UserID:      addReviewBody.UserID,
+		UserID:      userID,
 		EntityID:    addReviewBody.EntityID,
 		Title:       addReviewBody.Title,
 		Subtitle:    addReviewBody.Subtitle,

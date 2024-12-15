@@ -18,7 +18,6 @@ type ListElement struct {
 }
 
 type addListParams struct {
-	UserID       string        `json:"userId"`
 	Type         int           `json:"type"`
 	Title        string        `json:"title"`
 	Colour       string        `json:"colour"`
@@ -44,6 +43,14 @@ func addList(w http.ResponseWriter, r *http.Request) {
 	if r.Method == "OPTIONS" {
 		return
 	}
+
+	token := r.Header["Authorization"][0][len("Bearer: "):]
+	userID, err := extractUserIDFromJWTPayload(token)
+	if err != nil {
+		http.Error(w, "Malformed authentication token", http.StatusUnauthorized)
+		return
+	}
+
 	var addListBody addListParams
 	decoder := json.NewDecoder(r.Body)
 	if err := decoder.Decode(&addListBody); err != nil {
@@ -93,7 +100,7 @@ func addList(w http.ResponseWriter, r *http.Request) {
 	createdOn := time.Now().UTC()
 	_, err = stmt.Exec(
 		id,
-		addListBody.UserID,
+		userID,
 		addListBody.Type,
 		addListBody.Title,
 		addListBody.Colour,
@@ -118,7 +125,7 @@ func addList(w http.ResponseWriter, r *http.Request) {
 
 	_, err = stmt.Exec(
 		id,
-		addListBody.UserID,
+		userID,
 		addListBody.ListElements[0].EntityID,
 		addListBody.ListElements[0].Name,
 		addListBody.ListElements[0].ImageSrc,
@@ -151,7 +158,7 @@ func addList(w http.ResponseWriter, r *http.Request) {
 	}
 
 	resp := List{
-		UserID:       addListBody.UserID,
+		UserID:       userID,
 		Title:        addListBody.Title,
 		Colour:       addListBody.Colour,
 		ListElements: addListBody.ListElements,
@@ -179,6 +186,32 @@ func deleteList(w http.ResponseWriter, r *http.Request) {
 	id := r.URL.Query().Get("id")
 	if id == "" {
 		http.Error(w, "Missing query params: id", http.StatusBadRequest)
+		return
+	}
+
+	token := r.Header["Authorization"][0][len("Bearer: "):]
+	currentUserID, err := extractUserIDFromJWTPayload(token)
+	if err != nil {
+		http.Error(w, "Malformed authentication token", http.StatusUnauthorized)
+		return
+	}
+
+	getListUserQuery := "SELECT user_id FROM lists WHERE id = $1"
+
+	var listUserID string
+	err = db.QueryRow(getListUserQuery, id).Scan(&listUserID)
+	if err != nil {
+		slog.Error("failed to execute SQL statement", "error", err)
+		http.Error(w, "Failed to delete list", http.StatusInternalServerError)
+		return
+	}
+	if currentUserID != listUserID {
+		slog.Error(
+			"user does not have permission to delete this list",
+			"requestingId", currentUserID,
+			"reviewUserId", listUserID,
+		)
+		http.Error(w, "user cannot delete someone else's list", http.StatusForbidden)
 		return
 	}
 
