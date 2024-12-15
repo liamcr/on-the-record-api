@@ -17,8 +17,14 @@ func RegisterHandlers() {
 		"/user",
 		middleware.EnsureValidToken()(http.HandlerFunc(addUser)).ServeHTTP,
 	).Methods("POST", "OPTIONS")
-	r.HandleFunc("/user/follow", followUser).Methods("POST", "OPTIONS")
-	r.HandleFunc("/user/unfollow", unfollowUser).Methods("POST", "OPTIONS")
+	r.HandleFunc(
+		"/user/follow",
+		middleware.EnsureValidToken()(http.HandlerFunc(followUser)).ServeHTTP,
+	).Methods("POST", "OPTIONS")
+	r.HandleFunc(
+		"/user/unfollow",
+		middleware.EnsureValidToken()(http.HandlerFunc(unfollowUser)).ServeHTTP,
+	).Methods("POST", "OPTIONS")
 	r.HandleFunc(
 		"/user",
 		middleware.EnsureValidToken()(http.HandlerFunc(updateUser)).ServeHTTP,

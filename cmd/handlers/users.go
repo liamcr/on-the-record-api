@@ -853,9 +853,11 @@ func followUser(w http.ResponseWriter, r *http.Request) {
 	if r.Method == "OPTIONS" {
 		return
 	}
-	followerID := r.URL.Query().Get("id")
-	if followerID == "" {
-		http.Error(w, "Missing query param: id", http.StatusBadRequest)
+
+	token := r.Header["Authorization"][0][len("Bearer: "):]
+	followerID, err := extractUserIDFromJWTPayload(token)
+	if err != nil {
+		http.Error(w, "Malformed authentication token", http.StatusUnauthorized)
 		return
 	}
 
@@ -905,9 +907,10 @@ func unfollowUser(w http.ResponseWriter, r *http.Request) {
 	if r.Method == "OPTIONS" {
 		return
 	}
-	unfollowerID := r.URL.Query().Get("id")
-	if unfollowerID == "" {
-		http.Error(w, "Missing query param: id", http.StatusBadRequest)
+	token := r.Header["Authorization"][0][len("Bearer: "):]
+	unfollowerID, err := extractUserIDFromJWTPayload(token)
+	if err != nil {
+		http.Error(w, "Malformed authentication token", http.StatusUnauthorized)
 		return
 	}
 
