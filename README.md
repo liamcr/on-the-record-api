@@ -16,7 +16,7 @@ This requires environment variables `DB_USER` and `DB_PASSWORD` to be set.
 
 Build a new image that will be pushed to docker hub:
 
-`docker build -t liamcrocketdev/otr-api:VERSION .`
+`docker buildx build --platform linux/amd64 -t liamcrocketdev/otr-api:VERSION .`
 
 Where `VERSION` is a valid semver value (e.g. `0.3.0`)
 
