@@ -1,6 +1,6 @@
 module on-the-record-api
 
-go 1.21
+go 1.23
 
 require (
 	github.com/auth0/go-jwt-middleware/v2 v2.2.0
